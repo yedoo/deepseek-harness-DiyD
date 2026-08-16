@@ -34,6 +34,8 @@ const desktopBridge = {
     ipcRenderer.invoke("desktop:install-client-update"),
   installHarnessUpdate: (): Promise<HarnessUpdateState> =>
     ipcRenderer.invoke("desktop:install-harness-update"),
+  restartForHarnessUpdate: (): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:restart-for-harness-update"),
   onClientUpdate: (callback: (state: DesktopUpdateState) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => callback(state);
     ipcRenderer.on("desktop:update-state", listener);
@@ -412,6 +414,9 @@ function injectTitlebar(): void {
         break;
       case "install-harness":
         harnessUpdate = await desktopBridge.installHarnessUpdate();
+        break;
+      case "restart-harness":
+        await desktopBridge.restartForHarnessUpdate();
         break;
     }
     renderUpdate();

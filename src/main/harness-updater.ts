@@ -3,13 +3,14 @@ import { gt, valid } from "semver";
 import { inspectHarnessInstallation } from "./config";
 import type { HarnessInstallStage } from "./harness-runtime-installer";
 
-export type HarnessUpdateStage = HarnessInstallStage | "switching" | "restarting";
+export type HarnessUpdateStage = HarnessInstallStage;
 
 export type HarnessUpdateState =
   | { phase: "idle"; currentVersion: string }
   | { phase: "checking"; currentVersion: string }
   | { phase: "up-to-date"; currentVersion: string }
   | { phase: "available"; currentVersion: string; version: string }
+  | { phase: "ready-to-restart"; currentVersion: string; version: string }
   | {
       phase: "installing";
       currentVersion: string;
@@ -95,7 +96,7 @@ export class HarnessUpdater {
   }
 
   async check(): Promise<HarnessUpdateState> {
-    if (this.state.phase === "installing") {
+    if (this.state.phase === "installing" || this.state.phase === "ready-to-restart") {
       return this.state;
     }
     if (this.checkInFlight) {
@@ -177,10 +178,10 @@ export class HarnessUpdater {
     publishStage("preparing");
     try {
       await this.installVersion(version, publishStage);
-      this.currentVersion = version;
       const state: HarnessUpdateState = {
-        phase: "up-to-date",
-        currentVersion: version,
+        phase: "ready-to-restart",
+        currentVersion: this.currentVersion,
+        version,
       };
       this.publish(state);
       return state;

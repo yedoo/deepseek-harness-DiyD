@@ -56,6 +56,20 @@ describe("HarnessRuntimeInstaller", () => {
     expect(readHarnessVersion(installer.currentRoot)).toBe("0.1.0-rc.6");
   });
 
+  it("recovers a verified staging runtime after the desktop app restarts", async () => {
+    const root = runtimeRoot();
+    const firstProcess = new HarnessRuntimeInstaller(root, fakePackageInstaller());
+    await firstProcess.prepare("0.1.0-rc.6");
+
+    const restartedProcess = new HarnessRuntimeInstaller(root, fakePackageInstaller());
+    const prepared = restartedProcess.preparedRuntime("0.1.0-rc.6");
+
+    expect(prepared).toEqual({
+      version: "0.1.0-rc.6",
+      stagingRoot: path.join(root, "staging"),
+    });
+  });
+
   it("restores the previous managed runtime when the new one fails its health check", async () => {
     const installer = new HarnessRuntimeInstaller(runtimeRoot(), fakePackageInstaller());
     installer.activate(await installer.prepare("0.1.0-rc.5"));
