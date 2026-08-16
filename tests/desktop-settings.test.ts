@@ -33,4 +33,23 @@ describe("DesktopSettingsStore", () => {
 
     expect(store.load()).toEqual({ harnessRoot: "E:\\Harness" });
   });
+
+  it("preserves update preferences when the Harness directory changes", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "dsh-settings-"));
+    temporaryDirectories.push(directory);
+    const store = new DesktopSettingsStore(path.join(directory, "settings.json"));
+    store.save({
+      harnessRoot: "D:\\DeepSeek\\deepseek-harness",
+      skippedDesktopVersion: "0.1.3",
+      skippedHarnessVersion: "0.1.0-rc.6",
+    });
+
+    store.update({ harnessRoot: "E:\\Harness" });
+
+    expect(store.load()).toEqual({
+      harnessRoot: "E:\\Harness",
+      skippedDesktopVersion: "0.1.3",
+      skippedHarnessVersion: "0.1.0-rc.6",
+    });
+  });
 });

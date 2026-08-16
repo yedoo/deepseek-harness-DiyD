@@ -24,4 +24,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: deepseek-harness-desktop-windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml

@@ -7,6 +7,30 @@ interface DesktopStatus {
   canSelectHarness?: boolean;
 }
 
+interface DesktopUpdateState {
+  phase: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  version?: string;
+  percent?: number;
+  message?: string;
+  supported: boolean;
+  skipped?: boolean;
+}
+
+interface HarnessUpdateState {
+  phase: "idle" | "checking" | "up-to-date" | "available" | "error";
+  currentVersion: string;
+  version?: string;
+  message?: string;
+  supported: boolean;
+  skipped?: boolean;
+}
+
+interface UpdateStates {
+  desktop: DesktopUpdateState;
+  harness: HarnessUpdateState;
+}
+
 const desktopBridge = {
   minimize: (): void => ipcRenderer.send("desktop:minimize"),
   toggleMaximize: (): void => ipcRenderer.send("desktop:toggle-maximize"),
@@ -14,6 +38,25 @@ const desktopBridge = {
   retry: (): void => ipcRenderer.send("desktop:retry"),
   selectHarness: (): Promise<boolean> => ipcRenderer.invoke("desktop:select-harness"),
   openLogs: (): Promise<string> => ipcRenderer.invoke("desktop:open-logs"),
+  getUpdateStates: (): Promise<UpdateStates> => ipcRenderer.invoke("desktop:get-update-states"),
+  checkClientUpdate: (): Promise<DesktopUpdateState> =>
+    ipcRenderer.invoke("desktop:check-client-update"),
+  downloadClientUpdate: (): Promise<DesktopUpdateState> =>
+    ipcRenderer.invoke("desktop:download-client-update"),
+  installClientUpdate: (): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:install-client-update"),
+  showHarnessUpdate: (): Promise<HarnessUpdateState> =>
+    ipcRenderer.invoke("desktop:show-harness-update"),
+  onClientUpdate: (callback: (state: DesktopUpdateState) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => callback(state);
+    ipcRenderer.on("desktop:update-state", listener);
+    return () => ipcRenderer.removeListener("desktop:update-state", listener);
+  },
+  onHarnessUpdate: (callback: (state: HarnessUpdateState) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: HarnessUpdateState) => callback(state);
+    ipcRenderer.on("desktop:harness-update-state", listener);
+    return () => ipcRenderer.removeListener("desktop:harness-update-state", listener);
+  },
   onStatus: (callback: (status: DesktopStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: DesktopStatus) => callback(status);
     ipcRenderer.on("desktop:status", listener);
@@ -100,11 +143,33 @@ function injectTitlebar(): void {
       }
       .title { font-weight: 600; white-space: nowrap; }
       .version {
+        width: auto;
+        height: auto;
         color: #71717a;
         font-size: 10px;
         border: 1px solid rgba(113, 113, 122, 0.2);
         border-radius: 999px;
         padding: 3px 6px;
+        background: transparent;
+        -webkit-app-region: no-drag;
+      }
+      .version:hover { background: rgba(24, 24, 27, 0.06); }
+      .update {
+        width: auto;
+        height: 22px;
+        border: 0;
+        border-radius: 999px;
+        padding: 0 9px;
+        background: #18181b;
+        color: white;
+        font: 11px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+        -webkit-app-region: no-drag;
+      }
+      .update:hover { background: #3f3f46; }
+      .update[hidden] { display: none; }
+      .update.progress {
+        background: #e8eefc;
+        color: #315a9d;
       }
       .spacer { flex: 1; }
       .controls {
@@ -112,7 +177,7 @@ function injectTitlebar(): void {
         display: flex;
         -webkit-app-region: no-drag;
       }
-      button {
+      .controls button {
         width: 46px;
         height: 100%;
         border: 0;
@@ -120,8 +185,8 @@ function injectTitlebar(): void {
         color: inherit;
         font: 15px/1 "Segoe UI Symbol", sans-serif;
       }
-      button:hover { background: rgba(24, 24, 27, 0.08); }
-      button.close:hover { background: #e81123; color: white; }
+      .controls button:hover { background: rgba(24, 24, 27, 0.08); }
+      .controls button.close:hover { background: #e81123; color: white; }
       @media (prefers-color-scheme: dark) {
         :host { color: #f4f4f5; }
         .bar {
@@ -130,14 +195,19 @@ function injectTitlebar(): void {
         }
         .mark { background: #f4f4f5; color: #18181b; }
         .version { color: #a1a1aa; border-color: rgba(161, 161, 170, 0.25); }
-        button:hover { background: rgba(255, 255, 255, 0.1); }
+        .version:hover { background: rgba(255, 255, 255, 0.08); }
+        .update { background: #f4f4f5; color: #18181b; }
+        .update:hover { background: #d4d4d8; }
+        .update.progress { background: #253451; color: #b9cff8; }
+        .controls button:hover { background: rgba(255, 255, 255, 0.1); }
       }
     </style>
     <div class="bar">
       <div class="identity">
         <span class="mark">DS</span>
         <span class="title">DeepSeek Harness</span>
-        <span class="version" aria-label="应用版本"></span>
+        <button class="version" aria-label="检查桌面客户端更新" title="检查更新"></button>
+        <button class="update" hidden></button>
       </div>
       <div class="spacer"></div>
       <div class="controls">
@@ -153,11 +223,73 @@ function injectTitlebar(): void {
   const maximize = shadow.querySelector<HTMLButtonElement>(".maximize");
   const close = shadow.querySelector<HTMLButtonElement>(".close");
   const bar = shadow.querySelector<HTMLElement>(".bar");
-  const version = shadow.querySelector<HTMLElement>(".version");
+  const version = shadow.querySelector<HTMLButtonElement>(".version");
+  const update = shadow.querySelector<HTMLButtonElement>(".update");
   minimize?.addEventListener("click", desktopBridge.minimize);
   maximize?.addEventListener("click", desktopBridge.toggleMaximize);
   close?.addEventListener("click", desktopBridge.close);
+  version?.addEventListener("click", () => void desktopBridge.checkClientUpdate());
   bar?.addEventListener("dblclick", desktopBridge.toggleMaximize);
+
+  let desktopUpdate: DesktopUpdateState | undefined;
+  let harnessUpdate: HarnessUpdateState | undefined;
+  const renderUpdate = (): void => {
+    if (!update) {
+      return;
+    }
+    update.hidden = true;
+    update.classList.remove("progress");
+    update.onclick = null;
+
+    if (desktopUpdate?.phase === "available" && !desktopUpdate.skipped) {
+      update.textContent = `客户端 v${desktopUpdate.version}`;
+      update.title = "下载桌面客户端更新";
+      update.onclick = () => void desktopBridge.downloadClientUpdate();
+      update.hidden = false;
+      return;
+    }
+    if (desktopUpdate?.phase === "downloading") {
+      update.textContent = `下载 ${desktopUpdate.percent ?? 0}%`;
+      update.title = "正在下载桌面客户端更新";
+      update.classList.add("progress");
+      update.hidden = false;
+      return;
+    }
+    if (desktopUpdate?.phase === "downloaded") {
+      update.textContent = "重启并更新";
+      update.title = `安装桌面客户端 v${desktopUpdate.version}`;
+      update.onclick = () => void desktopBridge.installClientUpdate();
+      update.hidden = false;
+      return;
+    }
+    if (desktopUpdate?.phase === "checking") {
+      update.textContent = "检查中…";
+      update.title = "正在检查桌面客户端更新";
+      update.classList.add("progress");
+      update.hidden = false;
+      return;
+    }
+    if (harnessUpdate?.phase === "available" && !harnessUpdate.skipped) {
+      update.textContent = `Harness v${harnessUpdate.version}`;
+      update.title = "查看官方 Harness 更新";
+      update.onclick = () => void desktopBridge.showHarnessUpdate();
+      update.hidden = false;
+    }
+  };
+
+  desktopBridge.onClientUpdate((state) => {
+    desktopUpdate = state;
+    renderUpdate();
+  });
+  desktopBridge.onHarnessUpdate((state) => {
+    harnessUpdate = state;
+    renderUpdate();
+  });
+  void desktopBridge.getUpdateStates().then((states) => {
+    desktopUpdate = states.desktop;
+    harnessUpdate = states.harness;
+    renderUpdate();
+  });
 
   void ipcRenderer.invoke("desktop:get-meta").then((meta: { version: string }) => {
     if (version) {

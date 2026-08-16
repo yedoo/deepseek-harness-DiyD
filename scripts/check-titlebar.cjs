@@ -3,6 +3,10 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 
 ipcMain.handle("desktop:get-meta", () => ({ version: "test" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
+ipcMain.handle("desktop:get-update-states", () => ({
+  desktop: { phase: "idle", currentVersion: "test", supported: false },
+  harness: { phase: "idle", currentVersion: "", supported: false },
+}));
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
@@ -26,13 +30,18 @@ app.whenReady().then(async () => {
       position: style.position,
       top: Math.round(rect.top),
       height: Math.round(rect.height),
+      hasUpdateApi:
+        typeof window.dshDesktop.checkClientUpdate === "function" &&
+        typeof window.dshDesktop.downloadClientUpdate === "function" &&
+        typeof window.dshDesktop.installClientUpdate === "function",
     };
   })()`);
   const passed =
     result.exists === true &&
     result.position === "fixed" &&
     result.top === 0 &&
-    result.height === 36;
+    result.height === 36 &&
+    result.hasUpdateApi === true;
   console.log(JSON.stringify(result));
   window.destroy();
   app.exit(passed ? 0 : 1);

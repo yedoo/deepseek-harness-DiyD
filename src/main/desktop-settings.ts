@@ -3,6 +3,8 @@ import path from "node:path";
 
 export interface DesktopSettings {
   harnessRoot?: string;
+  skippedDesktopVersion?: string;
+  skippedHarnessVersion?: string;
 }
 
 export class DesktopSettingsStore {
@@ -11,7 +13,15 @@ export class DesktopSettingsStore {
   load(): DesktopSettings {
     try {
       const value = JSON.parse(readFileSync(this.filePath, "utf8")) as DesktopSettings;
-      return typeof value.harnessRoot === "string" ? { harnessRoot: value.harnessRoot } : {};
+      return {
+        ...(typeof value.harnessRoot === "string" ? { harnessRoot: value.harnessRoot } : {}),
+        ...(typeof value.skippedDesktopVersion === "string"
+          ? { skippedDesktopVersion: value.skippedDesktopVersion }
+          : {}),
+        ...(typeof value.skippedHarnessVersion === "string"
+          ? { skippedHarnessVersion: value.skippedHarnessVersion }
+          : {}),
+      };
     } catch {
       return {};
     }
@@ -22,5 +32,11 @@ export class DesktopSettingsStore {
     const temporaryPath = `${this.filePath}.tmp`;
     writeFileSync(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
     renameSync(temporaryPath, this.filePath);
+  }
+
+  update(settings: Partial<DesktopSettings>): DesktopSettings {
+    const nextSettings = { ...this.load(), ...settings };
+    this.save(nextSettings);
+    return nextSettings;
   }
 }
