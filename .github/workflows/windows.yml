@@ -20,6 +20,7 @@ jobs:
       - run: npm run build
       - run: npm run test:titlebar
       - run: npm run dist:win
+      - run: npm run test:packaged-native
       - uses: actions/upload-artifact@v7
         with:
           name: deepseek-harness-desktop-windows

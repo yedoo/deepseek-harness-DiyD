@@ -23,6 +23,19 @@ const desktopBridge = {
 
 contextBridge.exposeInMainWorld("dshDesktop", desktopBridge);
 
+window.addEventListener(
+  "pointerdown",
+  (event) => {
+    const fromDesktopTitlebar = event
+      .composedPath()
+      .some((node) => node instanceof HTMLElement && node.id === "dsh-desktop-titlebar");
+    if (!fromDesktopTitlebar) {
+      ipcRenderer.send("desktop:workspace-interaction");
+    }
+  },
+  { capture: true },
+);
+
 function injectTitlebar(): void {
   if (document.getElementById("dsh-desktop-titlebar")) {
     return;

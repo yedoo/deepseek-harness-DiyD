@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "author": "yedoo",
   "description": "A minimal, frameless desktop host for DeepSeek Harness.",
@@ -19,6 +19,7 @@
     "dev": "npm run build && electron .",
     "test": "vitest run",
     "test:titlebar": "electron scripts/check-titlebar.cjs",
+    "test:packaged-native": "electron scripts/check-packaged-native.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pack": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win nsis"
@@ -46,6 +47,9 @@
       "dist/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/@koromix/koffi-win32-x64/**/*"
+    ],
     "win": {
       "icon": "assets/icon.png",
       "target": [
@@ -63,5 +67,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "dependencies": {
+    "koffi": "^3.1.0"
   }
 }

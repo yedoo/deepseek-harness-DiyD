@@ -14,6 +14,7 @@
 - 复用 Electron 内置 Node，运行客户端无需单独安装 Node.js
 - 自动沿用 Harness 安装目录旁的 `data` 数据目录
 - 首次运行可选择本机 DeepSeek Harness 目录
+- Windows 工作区选择器会立即显示在桌面窗口前方
 - 启动状态、失败重试和日志入口
 - 仅允许 Harness 本机源留在应用内，外部网页使用系统浏览器打开
 - 退出时只清理客户端自己启动的 Harness 进程

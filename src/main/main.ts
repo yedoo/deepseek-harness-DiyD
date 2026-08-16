@@ -13,6 +13,11 @@ import { DesktopSettingsStore } from "./desktop-settings";
 import { HarnessService, isHarnessHealthy } from "./harness-service";
 import { classifyNavigation } from "./navigation";
 import { chooseStartupStrategy } from "./startup-strategy";
+import {
+  bringWorkspaceDialogToForeground,
+  prepareForWorkspaceDialog,
+  WorkspaceDialogForegroundWatcher,
+} from "./workspace-dialog-foreground";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -28,6 +33,9 @@ let starting = false;
 let cleanupStarted = false;
 let cleanupFinished = false;
 let settingsStore: DesktopSettingsStore | undefined;
+const workspaceDialogWatcher = new WorkspaceDialogForegroundWatcher(
+  bringWorkspaceDialogToForeground,
+);
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -54,6 +62,7 @@ app.on("before-quit", (event) => {
     return;
   }
   cleanupStarted = true;
+  workspaceDialogWatcher.dispose();
   void (harnessService?.stop() ?? Promise.resolve()).finally(() => {
     cleanupFinished = true;
     app.quit();
@@ -232,6 +241,14 @@ function registerDesktopIpc(): void {
       harnessService = undefined;
       void startHarness();
     });
+  });
+  ipcMain.on("desktop:workspace-interaction", (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window !== mainWindow || !window.isFocused()) {
+      return;
+    }
+    prepareForWorkspaceDialog();
+    workspaceDialogWatcher.arm();
   });
   ipcMain.handle("desktop:select-harness", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
