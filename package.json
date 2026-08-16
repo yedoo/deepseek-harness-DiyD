@@ -1,0 +1,67 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.1",
+  "private": true,
+  "author": "yedoo",
+  "description": "A minimal, frameless desktop host for DeepSeek Harness.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedoo/deepseek-harness-DiyD.git"
+  },
+  "homepage": "https://github.com/yedoo/deepseek-harness-DiyD",
+  "bugs": {
+    "url": "https://github.com/yedoo/deepseek-harness-DiyD/issues"
+  },
+  "main": "dist/main/main.js",
+  "scripts": {
+    "prebuild": "node scripts/build-icon.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "dev": "npm run build && electron .",
+    "test": "vitest run",
+    "test:titlebar": "electron scripts/check-titlebar.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win nsis"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.yedoo.deepseek-harness-desktop",
+    "productName": "DeepSeek Harness Desktop",
+    "artifactName": "DeepSeek-Harness-Desktop-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
