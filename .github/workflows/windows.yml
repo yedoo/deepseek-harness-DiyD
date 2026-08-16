@@ -9,8 +9,8 @@ jobs:
   verify-and-package:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -20,7 +20,7 @@ jobs:
       - run: npm run build
       - run: npm run test:titlebar
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deepseek-harness-desktop-windows
           path: release/*.exe
