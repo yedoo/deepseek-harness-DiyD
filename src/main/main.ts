@@ -23,6 +23,7 @@ import {
   readHarnessVersion,
 } from "./harness-updater";
 import { classifyNavigation } from "./navigation";
+import { RunningHarnessLocator } from "./running-harness-locator";
 import { chooseStartupStrategy } from "./startup-strategy";
 import {
   bringWorkspaceDialogToForeground,
@@ -51,14 +52,10 @@ let desktopInitialCheckTimer: NodeJS.Timeout | undefined;
 let desktopCheckInterval: NodeJS.Timeout | undefined;
 let harnessInitialCheckTimer: NodeJS.Timeout | undefined;
 let harnessCheckInterval: NodeJS.Timeout | undefined;
-const promptedDesktopVersions = new Set<string>();
-const promptedDownloadedVersions = new Set<string>();
-const promptedHarnessVersions = new Set<string>();
-const desktopPromptsInFlight = new Set<string>();
-const harnessPromptsInFlight = new Set<string>();
-const UPDATE_CHECK_DELAY_MS = 15_000;
+const UPDATE_CHECK_DELAY_MS = 2_500;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const HARNESS_PACKAGE_URL = "https://www.npmjs.com/package/@deepseek-ai/dsh";
+const runningHarnessLocator = new RunningHarnessLocator();
 const workspaceDialogWatcher = new WorkspaceDialogForegroundWatcher(
   bringWorkspaceDialogToForeground,
 );
@@ -192,8 +189,9 @@ async function startHarness(): Promise<void> {
       harnessService = undefined;
       harnessOrigin = new URL(strategy.url).origin;
       await mainWindow.loadURL(strategy.url);
-      const harnessRoot = tryResolveHarnessRoot();
+      const harnessRoot = await runningHarnessLocator.find() ?? tryResolveHarnessRoot();
       if (harnessRoot) {
+        settingsStore?.update({ harnessRoot });
         initializeHarnessUpdater(harnessRoot);
       }
       return;
@@ -260,14 +258,7 @@ function initializeDesktopUpdater(): void {
     return;
   }
   desktopUpdater = new DesktopUpdater(app.getVersion(), new ElectronUpdateTransport());
-  desktopUpdater.subscribe((state) => {
-    sendDesktopUpdateState();
-    if (state.phase === "available") {
-      void showDesktopUpdatePrompt(state);
-    } else if (state.phase === "downloaded") {
-      void showDownloadedUpdatePrompt(state);
-    }
-  });
+  desktopUpdater.subscribe(() => sendDesktopUpdateState());
   desktopInitialCheckTimer = setTimeout(() => void desktopUpdater?.check(), UPDATE_CHECK_DELAY_MS);
   desktopCheckInterval = setInterval(
     () => void desktopUpdater?.check(),
@@ -280,12 +271,7 @@ function initializeHarnessUpdater(harnessRoot: string): void {
   try {
     const currentVersion = readHarnessVersion(harnessRoot);
     harnessUpdater = new HarnessUpdater(currentVersion, fetchLatestHarnessVersion);
-    harnessUpdateUnsubscribe = harnessUpdater.subscribe((state) => {
-      sendHarnessUpdateState();
-      if (state.phase === "available") {
-        void showHarnessUpdatePrompt(state);
-      }
-    });
+    harnessUpdateUnsubscribe = harnessUpdater.subscribe(() => sendHarnessUpdateState());
     harnessInitialCheckTimer = setTimeout(
       () => void harnessUpdater?.check(),
       UPDATE_CHECK_DELAY_MS,
@@ -388,99 +374,39 @@ function sendHarnessUpdateState(): void {
   mainWindow.webContents.send("desktop:harness-update-state", harnessStateForRenderer());
 }
 
-async function showDesktopUpdatePrompt(
-  state: Extract<DesktopUpdateState, { phase: "available" }>,
-  force = false,
-): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed() || desktopPromptsInFlight.has(state.version)) {
-    return;
-  }
-  const skipped = settingsStore?.load().skippedDesktopVersion === state.version;
-  if (!force && (skipped || promptedDesktopVersions.has(state.version))) {
-    return;
-  }
-  desktopPromptsInFlight.add(state.version);
-  promptedDesktopVersions.add(state.version);
-  try {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "DeepSeek Harness Desktop 更新",
-      message: `发现桌面客户端新版本 v${state.version}`,
-      detail: "可以在应用内下载；下载完成后由你确认重启安装。",
-      buttons: ["下载更新", "跳过此版本", "稍后"],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    });
-    if (result.response === 0) {
-      await desktopUpdater?.download();
-    } else if (result.response === 1) {
-      settingsStore?.update({ skippedDesktopVersion: state.version });
-      sendDesktopUpdateState();
+async function checkHarnessUpdates(): Promise<ReturnType<typeof harnessStateForRenderer>> {
+  if (!harnessUpdater) {
+    const harnessRoot = await runningHarnessLocator.find() ?? tryResolveHarnessRoot();
+    if (harnessRoot) {
+      settingsStore?.update({ harnessRoot });
+      initializeHarnessUpdater(harnessRoot);
     }
-  } finally {
-    desktopPromptsInFlight.delete(state.version);
   }
-}
-
-async function showDownloadedUpdatePrompt(
-  state: Extract<DesktopUpdateState, { phase: "downloaded" }>,
-): Promise<void> {
-  if (
-    !mainWindow ||
-    mainWindow.isDestroyed() ||
-    promptedDownloadedVersions.has(state.version)
-  ) {
-    return;
-  }
-  promptedDownloadedVersions.add(state.version);
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: "info",
-    title: "更新已下载",
-    message: `DeepSeek Harness Desktop v${state.version} 已准备好`,
-    detail: "重启应用即可完成更新。未保存的工作请先保存。",
-    buttons: ["重启并更新", "稍后"],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
-  });
-  if (result.response === 0) {
-    desktopUpdater?.install();
-  }
+  await harnessUpdater?.check();
+  return harnessStateForRenderer();
 }
 
 async function showHarnessUpdatePrompt(
   state: Extract<HarnessUpdateState, { phase: "available" }>,
-  force = false,
 ): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed() || harnessPromptsInFlight.has(state.version)) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
-  const skipped = settingsStore?.load().skippedHarnessVersion === state.version;
-  if (!force && (skipped || promptedHarnessVersions.has(state.version))) {
-    return;
-  }
-  harnessPromptsInFlight.add(state.version);
-  promptedHarnessVersions.add(state.version);
-  try {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "DeepSeek Harness 更新",
-      message: `官方 Harness v${state.version} 已发布`,
-      detail: `当前本地版本为 v${state.currentVersion}。第一版仅提醒，不会覆盖你的源码目录。`,
-      buttons: ["打开官方 npm 页面", "跳过此版本", "稍后"],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    });
-    if (result.response === 0) {
-      await shell.openExternal(HARNESS_PACKAGE_URL);
-    } else if (result.response === 1) {
-      settingsStore?.update({ skippedHarnessVersion: state.version });
-      sendHarnessUpdateState();
-    }
-  } finally {
-    harnessPromptsInFlight.delete(state.version);
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "DeepSeek Harness 更新",
+    message: `官方 Harness v${state.version} 已发布`,
+    detail: `当前本地版本为 v${state.currentVersion}。第一版仅提醒，不会覆盖你的源码目录。`,
+    buttons: ["打开官方 npm 页面", "跳过此版本", "取消"],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  });
+  if (result.response === 0) {
+    await shell.openExternal(HARNESS_PACKAGE_URL);
+  } else if (result.response === 1) {
+    settingsStore?.update({ skippedHarnessVersion: state.version });
+    sendHarnessUpdateState();
   }
 }
 
@@ -584,12 +510,10 @@ function registerDesktopIpc(): void {
       await showDesktopUpdatesUnavailable();
       return getUpdateStates().desktop;
     }
-    const state = await desktopUpdater.check();
-    if (state.phase === "available") {
-      await showDesktopUpdatePrompt(state, true);
-    }
+    await desktopUpdater.check();
     return desktopStateForRenderer();
   });
+  ipcMain.handle("desktop:check-harness-update", () => checkHarnessUpdates());
   ipcMain.handle("desktop:download-client-update", async () => {
     await desktopUpdater?.download();
     return desktopStateForRenderer();
@@ -598,7 +522,7 @@ function registerDesktopIpc(): void {
   ipcMain.handle("desktop:show-harness-update", async () => {
     const state = harnessUpdater?.getState();
     if (state?.phase === "available") {
-      await showHarnessUpdatePrompt(state, true);
+      await showHarnessUpdatePrompt(state);
     }
     return harnessStateForRenderer();
   });

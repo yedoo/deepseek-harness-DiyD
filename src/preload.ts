@@ -1,4 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
+import {
+  presentUpdates,
+  type UpdateAction,
+  type UpdateChannelState,
+  type UpdateStates,
+} from "./preload/update-presentation";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -7,29 +13,8 @@ interface DesktopStatus {
   canSelectHarness?: boolean;
 }
 
-interface DesktopUpdateState {
-  phase: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
-  currentVersion: string;
-  version?: string;
-  percent?: number;
-  message?: string;
-  supported: boolean;
-  skipped?: boolean;
-}
-
-interface HarnessUpdateState {
-  phase: "idle" | "checking" | "up-to-date" | "available" | "error";
-  currentVersion: string;
-  version?: string;
-  message?: string;
-  supported: boolean;
-  skipped?: boolean;
-}
-
-interface UpdateStates {
-  desktop: DesktopUpdateState;
-  harness: HarnessUpdateState;
-}
+type DesktopUpdateState = UpdateChannelState;
+type HarnessUpdateState = UpdateChannelState;
 
 const desktopBridge = {
   minimize: (): void => ipcRenderer.send("desktop:minimize"),
@@ -41,6 +26,8 @@ const desktopBridge = {
   getUpdateStates: (): Promise<UpdateStates> => ipcRenderer.invoke("desktop:get-update-states"),
   checkClientUpdate: (): Promise<DesktopUpdateState> =>
     ipcRenderer.invoke("desktop:check-client-update"),
+  checkHarnessUpdate: (): Promise<HarnessUpdateState> =>
+    ipcRenderer.invoke("desktop:check-harness-update"),
   downloadClientUpdate: (): Promise<DesktopUpdateState> =>
     ipcRenderer.invoke("desktop:download-client-update"),
   installClientUpdate: (): Promise<boolean> =>
@@ -143,33 +130,105 @@ function injectTitlebar(): void {
       }
       .title { font-weight: 600; white-space: nowrap; }
       .version {
-        width: auto;
-        height: auto;
         color: #71717a;
         font-size: 10px;
         border: 1px solid rgba(113, 113, 122, 0.2);
         border-radius: 999px;
         padding: 3px 6px;
-        background: transparent;
+      }
+      .update-shell {
+        position: relative;
+        height: 100%;
+        display: flex;
+        align-items: center;
         -webkit-app-region: no-drag;
       }
-      .version:hover { background: rgba(24, 24, 27, 0.06); }
-      .update {
-        width: auto;
-        height: 22px;
+      .update-trigger {
+        position: relative;
+        width: 38px;
+        height: 100%;
         border: 0;
-        border-radius: 999px;
-        padding: 0 9px;
-        background: #18181b;
-        color: white;
-        font: 11px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+        display: grid;
+        place-items: center;
+        color: #52525b;
+        background: transparent;
+      }
+      .update-trigger:hover,
+      .update-trigger[aria-expanded="true"] { background: rgba(24, 24, 27, 0.07); }
+      .update-trigger svg { width: 17px; height: 17px; }
+      .update-arrow { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .progress-ring { fill: none; stroke: #3b82f6; stroke-width: 2; stroke-linecap: round; opacity: 0; transform: rotate(-90deg); transform-origin: center; }
+      .update-trigger[data-state="checking"] .update-arrow { animation: update-spin 1s linear infinite; }
+      .update-trigger[data-state="downloading"] .progress-ring { opacity: 1; }
+      .update-dot {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 6px;
+        height: 6px;
+        border: 2px solid #fafafa;
+        border-radius: 50%;
+        display: none;
+        background: #3b82f6;
+      }
+      .update-trigger[data-state="available"] .update-dot,
+      .update-trigger[data-state="ready"] .update-dot { display: block; }
+      .update-trigger[data-state="ready"] .update-dot { background: #22c55e; }
+      @keyframes update-spin { to { transform: rotate(360deg); } }
+      .update-panel {
+        position: absolute;
+        top: 40px;
+        right: 0;
+        width: 330px;
+        box-sizing: border-box;
+        border: 1px solid rgba(24, 24, 27, 0.12);
+        border-radius: 12px;
+        padding: 6px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 16px 44px rgba(24, 24, 27, 0.18), 0 2px 8px rgba(24, 24, 27, 0.08);
+        color: #18181b;
         -webkit-app-region: no-drag;
       }
-      .update:hover { background: #3f3f46; }
-      .update[hidden] { display: none; }
-      .update.progress {
-        background: #e8eefc;
-        color: #315a9d;
+      .update-panel[hidden] { display: none; }
+      .update-header,
+      .update-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 9px;
+      }
+      .update-heading { font-size: 13px; font-weight: 650; }
+      .update-auto { color: #a1a1aa; font-size: 10px; }
+      .update-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 54px;
+        padding: 7px 9px;
+        border-radius: 8px;
+      }
+      .update-row + .update-row { border-top: 1px solid rgba(24, 24, 27, 0.07); border-radius: 0 0 8px 8px; }
+      .update-row-name { font-size: 12px; font-weight: 600; }
+      .update-row-meta { display: flex; gap: 7px; margin-top: 5px; color: #71717a; font-size: 10px; }
+      .update-row-version { color: #3f3f46; }
+      .update-action,
+      .update-check {
+        border: 0;
+        border-radius: 7px;
+        color: #18181b;
+        background: #f1f1f3;
+        font: 11px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+      }
+      .update-action { min-width: 66px; height: 28px; padding: 0 9px; }
+      .update-action:hover,
+      .update-check:hover { background: #e4e4e7; }
+      .update-check { height: 26px; padding: 0 9px; color: #52525b; background: transparent; }
+      .update-check:disabled { opacity: 0.5; }
+      .update-error { color: #dc2626; }
+      .update-current { color: #16a34a; }
+      @media (prefers-reduced-motion: reduce) {
+        .update-trigger[data-state="checking"] .update-arrow { animation: none; }
       }
       .spacer { flex: 1; }
       .controls {
@@ -195,10 +254,24 @@ function injectTitlebar(): void {
         }
         .mark { background: #f4f4f5; color: #18181b; }
         .version { color: #a1a1aa; border-color: rgba(161, 161, 170, 0.25); }
-        .version:hover { background: rgba(255, 255, 255, 0.08); }
-        .update { background: #f4f4f5; color: #18181b; }
-        .update:hover { background: #d4d4d8; }
-        .update.progress { background: #253451; color: #b9cff8; }
+        .update-trigger { color: #d4d4d8; }
+        .update-trigger:hover,
+        .update-trigger[aria-expanded="true"] { background: rgba(255, 255, 255, 0.09); }
+        .update-dot { border-color: #18181b; }
+        .update-panel {
+          border-color: rgba(255, 255, 255, 0.13);
+          background: rgba(32, 32, 35, 0.98);
+          color: #f4f4f5;
+          box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+        .update-row + .update-row { border-top-color: rgba(255, 255, 255, 0.08); }
+        .update-row-meta { color: #a1a1aa; }
+        .update-row-version { color: #d4d4d8; }
+        .update-action { color: #f4f4f5; background: #3f3f46; }
+        .update-action:hover { background: #52525b; }
+        .update-check { color: #a1a1aa; }
+        .update-check:hover { background: rgba(255, 255, 255, 0.08); }
+        .update-current { color: #4ade80; }
         .controls button:hover { background: rgba(255, 255, 255, 0.1); }
       }
     </style>
@@ -206,10 +279,48 @@ function injectTitlebar(): void {
       <div class="identity">
         <span class="mark">DS</span>
         <span class="title">DeepSeek Harness</span>
-        <button class="version" aria-label="检查桌面客户端更新" title="检查更新"></button>
-        <button class="update" hidden></button>
+        <span class="version" aria-label="应用版本"></span>
       </div>
       <div class="spacer"></div>
+      <div class="update-shell">
+        <button class="update-trigger" data-state="idle" aria-label="版本更新" title="版本更新" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="progress-ring" cx="12" cy="12" r="9" pathLength="100"></circle>
+            <path class="update-arrow" d="M20 7v5h-5M4 17v-5h5M6.1 8.5A7 7 0 0 1 18.4 7M17.9 15.5A7 7 0 0 1 5.6 17"></path>
+          </svg>
+          <span class="update-dot" aria-hidden="true"></span>
+        </button>
+        <section class="update-panel" aria-label="版本更新" hidden>
+          <div class="update-header">
+            <span class="update-heading">版本更新</span>
+            <span class="update-auto">自动检查已开启</span>
+          </div>
+          <div class="update-row desktop-row">
+            <div>
+              <div class="update-row-name"></div>
+              <div class="update-row-meta">
+                <span class="update-row-version"></span>
+                <span class="update-row-status"></span>
+              </div>
+            </div>
+            <button class="update-action" hidden></button>
+          </div>
+          <div class="update-row harness-row">
+            <div>
+              <div class="update-row-name"></div>
+              <div class="update-row-meta">
+                <span class="update-row-version"></span>
+                <span class="update-row-status"></span>
+              </div>
+            </div>
+            <button class="update-action" hidden></button>
+          </div>
+          <div class="update-footer">
+            <span class="update-auto">客户端与 Harness 独立更新</span>
+            <button class="update-check">重新检查</button>
+          </div>
+        </section>
+      </div>
       <div class="controls">
         <button class="minimize" aria-label="最小化" title="最小化">−</button>
         <button class="maximize" aria-label="最大化" title="最大化">□</button>
@@ -223,59 +334,129 @@ function injectTitlebar(): void {
   const maximize = shadow.querySelector<HTMLButtonElement>(".maximize");
   const close = shadow.querySelector<HTMLButtonElement>(".close");
   const bar = shadow.querySelector<HTMLElement>(".bar");
-  const version = shadow.querySelector<HTMLButtonElement>(".version");
-  const update = shadow.querySelector<HTMLButtonElement>(".update");
+  const version = shadow.querySelector<HTMLElement>(".version");
+  const updateTrigger = shadow.querySelector<HTMLButtonElement>(".update-trigger");
+  const updatePanel = shadow.querySelector<HTMLElement>(".update-panel");
+  const updateCheck = shadow.querySelector<HTMLButtonElement>(".update-check");
+  const progressRing = shadow.querySelector<SVGCircleElement>(".progress-ring");
+  const desktopRow = shadow.querySelector<HTMLElement>(".desktop-row");
+  const harnessRow = shadow.querySelector<HTMLElement>(".harness-row");
   minimize?.addEventListener("click", desktopBridge.minimize);
   maximize?.addEventListener("click", desktopBridge.toggleMaximize);
   close?.addEventListener("click", desktopBridge.close);
-  version?.addEventListener("click", () => void desktopBridge.checkClientUpdate());
-  bar?.addEventListener("dblclick", desktopBridge.toggleMaximize);
+  bar?.addEventListener("dblclick", (event) => {
+    if (!event.composedPath().some((node) => node instanceof HTMLButtonElement)) {
+      desktopBridge.toggleMaximize();
+    }
+  });
 
   let desktopUpdate: DesktopUpdateState | undefined;
   let harnessUpdate: HarnessUpdateState | undefined;
-  const renderUpdate = (): void => {
-    if (!update) {
+  const setPanelOpen = (open: boolean): void => {
+    if (!updatePanel || !updateTrigger) {
       return;
     }
-    update.hidden = true;
-    update.classList.remove("progress");
-    update.onclick = null;
+    updatePanel.hidden = !open;
+    updateTrigger.setAttribute("aria-expanded", String(open));
+    host.dataset.updatePanelOpen = String(open);
+  };
+  updateTrigger?.addEventListener("click", () => setPanelOpen(updatePanel?.hidden !== false));
+  document.addEventListener("pointerdown", (event) => {
+    if (updatePanel?.hidden === false && !event.composedPath().includes(host)) {
+      setPanelOpen(false);
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setPanelOpen(false);
+    }
+  });
 
-    if (desktopUpdate?.phase === "available" && !desktopUpdate.skipped) {
-      update.textContent = `客户端 v${desktopUpdate.version}`;
-      update.title = "下载桌面客户端更新";
-      update.onclick = () => void desktopBridge.downloadClientUpdate();
-      update.hidden = false;
+  const performAction = async (action: UpdateAction): Promise<void> => {
+    switch (action.kind) {
+      case "check-desktop":
+        desktopUpdate = await desktopBridge.checkClientUpdate();
+        break;
+      case "download-desktop":
+        desktopUpdate = await desktopBridge.downloadClientUpdate();
+        break;
+      case "install-desktop":
+        await desktopBridge.installClientUpdate();
+        break;
+      case "check-harness":
+        harnessUpdate = await desktopBridge.checkHarnessUpdate();
+        break;
+      case "show-harness":
+        harnessUpdate = await desktopBridge.showHarnessUpdate();
+        break;
+    }
+    renderUpdate();
+  };
+
+  const renderRow = (
+    row: HTMLElement | null,
+    presentation: ReturnType<typeof presentUpdates>["desktop"],
+  ): void => {
+    if (!row) {
       return;
     }
-    if (desktopUpdate?.phase === "downloading") {
-      update.textContent = `下载 ${desktopUpdate.percent ?? 0}%`;
-      update.title = "正在下载桌面客户端更新";
-      update.classList.add("progress");
-      update.hidden = false;
-      return;
+    const name = row.querySelector<HTMLElement>(".update-row-name");
+    const rowVersion = row.querySelector<HTMLElement>(".update-row-version");
+    const status = row.querySelector<HTMLElement>(".update-row-status");
+    const action = row.querySelector<HTMLButtonElement>(".update-action");
+    if (name) name.textContent = presentation.name;
+    if (rowVersion) rowVersion.textContent = presentation.version;
+    if (status) {
+      status.textContent = presentation.status;
+      status.classList.toggle("update-error", presentation.status === "检查失败");
+      status.classList.toggle("update-current", presentation.status === "已是最新");
     }
-    if (desktopUpdate?.phase === "downloaded") {
-      update.textContent = "重启并更新";
-      update.title = `安装桌面客户端 v${desktopUpdate.version}`;
-      update.onclick = () => void desktopBridge.installClientUpdate();
-      update.hidden = false;
-      return;
-    }
-    if (desktopUpdate?.phase === "checking") {
-      update.textContent = "检查中…";
-      update.title = "正在检查桌面客户端更新";
-      update.classList.add("progress");
-      update.hidden = false;
-      return;
-    }
-    if (harnessUpdate?.phase === "available" && !harnessUpdate.skipped) {
-      update.textContent = `Harness v${harnessUpdate.version}`;
-      update.title = "查看官方 Harness 更新";
-      update.onclick = () => void desktopBridge.showHarnessUpdate();
-      update.hidden = false;
+    if (action) {
+      action.hidden = presentation.action === undefined;
+      action.textContent = presentation.action?.label ?? "";
+      action.onclick = presentation.action
+        ? () => void performAction(presentation.action as UpdateAction)
+        : null;
     }
   };
+
+  const renderUpdate = (): void => {
+    if (!updateTrigger || !desktopUpdate || !harnessUpdate) {
+      return;
+    }
+    const presentation = presentUpdates({ desktop: desktopUpdate, harness: harnessUpdate });
+    updateTrigger.dataset.state = presentation.icon;
+    updateTrigger.title = {
+      idle: "版本更新",
+      checking: "正在检查更新",
+      available: "发现新版本",
+      downloading: `正在下载 ${desktopUpdate.percent ?? 0}%`,
+      ready: "更新已下载，等待重启",
+    }[presentation.icon];
+    updateTrigger.setAttribute("aria-label", updateTrigger.title);
+    host.dataset.updateState = presentation.icon;
+    if (progressRing) {
+      progressRing.style.strokeDasharray = "100";
+      progressRing.style.strokeDashoffset = String(100 - (desktopUpdate.percent ?? 0));
+    }
+    renderRow(desktopRow, presentation.desktop);
+    renderRow(harnessRow, presentation.harness);
+  };
+
+  updateCheck?.addEventListener("click", async () => {
+    updateCheck.disabled = true;
+    try {
+      const [desktop, harness] = await Promise.all([
+        desktopBridge.checkClientUpdate(),
+        desktopBridge.checkHarnessUpdate(),
+      ]);
+      desktopUpdate = desktop;
+      harnessUpdate = harness;
+      renderUpdate();
+    } finally {
+      updateCheck.disabled = false;
+    }
+  });
 
   desktopBridge.onClientUpdate((state) => {
     desktopUpdate = state;
@@ -290,6 +471,8 @@ function injectTitlebar(): void {
     harnessUpdate = states.harness;
     renderUpdate();
   });
+  host.dataset.updateControl = "true";
+  host.dataset.updatePanelOpen = "false";
 
   void ipcRenderer.invoke("desktop:get-meta").then((meta: { version: string }) => {
     if (version) {
