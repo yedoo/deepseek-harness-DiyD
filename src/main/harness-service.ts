@@ -24,6 +24,22 @@ export interface HarnessConnection {
 
 export type HarnessStatusListener = (message: string) => void;
 
+export function harnessLaunchArguments(
+  cliPath: string,
+  port: number,
+  runElectronAsNode = false,
+): string[] {
+  return [
+    ...(runElectronAsNode ? ["--expose-internals"] : []),
+    cliPath,
+    "web",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    String(port),
+  ];
+}
+
 export class HarnessService extends EventEmitter {
   private ownedProcess?: ChildProcess;
   private stopping = false;
@@ -62,7 +78,11 @@ export class HarnessService extends EventEmitter {
     });
     const child = spawn(
       this.options.nodeExecutable,
-      [this.options.cliPath, "web", "--host", "127.0.0.1", "--port", String(port)],
+      harnessLaunchArguments(
+        this.options.cliPath,
+        port,
+        this.options.runElectronAsNode,
+      ),
       {
         cwd: this.options.harnessRoot,
         env: {
