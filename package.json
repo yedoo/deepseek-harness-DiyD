@@ -22,7 +22,7 @@
     "test:packaged-native": "electron scripts/check-packaged-native.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pack": "npm run build && electron-builder --dir",
-    "dist:win": "npm run build && electron-builder --win nsis"
+    "dist:win": "npm run build && electron-builder --win nsis --publish never"
   },
   "engines": {
     "node": ">=20"
