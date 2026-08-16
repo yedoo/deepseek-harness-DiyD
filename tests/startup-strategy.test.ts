@@ -30,4 +30,19 @@ describe("chooseStartupStrategy", () => {
     expect(strategy).toEqual({ kind: "launch", installation });
     expect(resolveHarnessInstallation).toHaveBeenCalledOnce();
   });
+
+  it("prefers a managed updated runtime over an older service on port 3080", async () => {
+    const installation = { harnessRoot: "managed" };
+    const isHealthy = vi.fn(async () => true);
+
+    const strategy = await chooseStartupStrategy({
+      preferredUrl: undefined,
+      preferInstallation: true,
+      isHealthy,
+      resolveHarnessInstallation: () => installation,
+    });
+
+    expect(strategy).toEqual({ kind: "launch", installation });
+    expect(isHealthy).not.toHaveBeenCalled();
+  });
 });

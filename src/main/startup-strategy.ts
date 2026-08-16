@@ -6,6 +6,7 @@ export type StartupStrategy<TInstallation> =
 
 export interface StartupStrategyOptions<TInstallation> {
   preferredUrl?: string;
+  preferInstallation?: boolean;
   isHealthy: (url: string) => Promise<boolean>;
   resolveHarnessInstallation: () => TInstallation;
 }
@@ -13,6 +14,13 @@ export interface StartupStrategyOptions<TInstallation> {
 export async function chooseStartupStrategy<TInstallation>(
   options: StartupStrategyOptions<TInstallation>,
 ): Promise<StartupStrategy<TInstallation>> {
+  if (options.preferInstallation) {
+    return {
+      kind: "launch",
+      installation: options.resolveHarnessInstallation(),
+    };
+  }
+
   const candidates = [options.preferredUrl, "http://127.0.0.1:3080"]
     .filter((value): value is string => Boolean(value))
     .filter((value, index, values) => values.indexOf(value) === index)

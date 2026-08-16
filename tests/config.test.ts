@@ -2,7 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveHarnessRoot } from "../src/main/config";
+import {
+  inspectHarnessInstallation,
+  resolveHarnessRoot,
+} from "../src/main/config";
 
 const temporaryDirectories: string[] = [];
 
@@ -49,5 +52,20 @@ describe("resolveHarnessRoot", () => {
     });
 
     expect(resolved).toBe(harnessRoot);
+  });
+
+  it("recognizes a managed npm Harness runtime without pretending it is a checkout", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "dsh-managed-"));
+    temporaryDirectories.push(root);
+    const packageRoot = path.join(root, "node_modules", "@deepseek-ai", "dsh");
+    mkdirSync(path.join(packageRoot, "lib"), { recursive: true });
+    writeFileSync(path.join(packageRoot, "lib", "bin.js"), "");
+    writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ version: "0.1.0-rc.6" }));
+
+    expect(inspectHarnessInstallation(root)).toMatchObject({
+      root,
+      kind: "managed",
+      cliPath: path.join(packageRoot, "lib", "bin.js"),
+    });
   });
 });

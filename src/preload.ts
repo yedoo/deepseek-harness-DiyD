@@ -32,8 +32,8 @@ const desktopBridge = {
     ipcRenderer.invoke("desktop:download-client-update"),
   installClientUpdate: (): Promise<boolean> =>
     ipcRenderer.invoke("desktop:install-client-update"),
-  showHarnessUpdate: (): Promise<HarnessUpdateState> =>
-    ipcRenderer.invoke("desktop:show-harness-update"),
+  installHarnessUpdate: (): Promise<HarnessUpdateState> =>
+    ipcRenderer.invoke("desktop:install-harness-update"),
   onClientUpdate: (callback: (state: DesktopUpdateState) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => callback(state);
     ipcRenderer.on("desktop:update-state", listener);
@@ -156,9 +156,8 @@ function injectTitlebar(): void {
       .update-trigger:hover,
       .update-trigger[aria-expanded="true"] { background: rgba(24, 24, 27, 0.07); }
       .update-trigger svg { width: 17px; height: 17px; }
-      .update-arrow { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .update-symbol { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
       .progress-ring { fill: none; stroke: #3b82f6; stroke-width: 2; stroke-linecap: round; opacity: 0; transform: rotate(-90deg); transform-origin: center; }
-      .update-trigger[data-state="checking"] .update-arrow { animation: update-spin 1s linear infinite; }
       .update-trigger[data-state="downloading"] .progress-ring { opacity: 1; }
       .update-dot {
         position: absolute;
@@ -174,7 +173,6 @@ function injectTitlebar(): void {
       .update-trigger[data-state="available"] .update-dot,
       .update-trigger[data-state="ready"] .update-dot { display: block; }
       .update-trigger[data-state="ready"] .update-dot { background: #22c55e; }
-      @keyframes update-spin { to { transform: rotate(360deg); } }
       .update-panel {
         position: absolute;
         top: 40px;
@@ -212,6 +210,29 @@ function injectTitlebar(): void {
       .update-row-name { font-size: 12px; font-weight: 600; }
       .update-row-meta { display: flex; gap: 7px; margin-top: 5px; color: #71717a; font-size: 10px; }
       .update-row-version { color: #3f3f46; }
+      .update-status-line { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+      .update-row-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .update-spinner {
+        display: none;
+        width: 9px;
+        height: 9px;
+        flex: 0 0 auto;
+        border: 1.5px solid rgba(82, 82, 91, 0.22);
+        border-top-color: #52525b;
+        border-radius: 50%;
+        animation: row-spin 0.8s linear infinite;
+      }
+      .update-row[data-busy="true"] .update-spinner { display: inline-block; }
+      @keyframes row-spin { to { transform: rotate(360deg); } }
+      .update-progress {
+        grid-column: 1 / -1;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.13);
+      }
+      .update-progress[hidden] { display: none; }
+      .update-progress-bar { height: 100%; width: 0; border-radius: inherit; background: #3b82f6; transition: width 160ms ease; }
       .update-action,
       .update-check {
         border: 0;
@@ -228,7 +249,7 @@ function injectTitlebar(): void {
       .update-error { color: #dc2626; }
       .update-current { color: #16a34a; }
       @media (prefers-reduced-motion: reduce) {
-        .update-trigger[data-state="checking"] .update-arrow { animation: none; }
+        .update-spinner { animation: none; }
       }
       .spacer { flex: 1; }
       .controls {
@@ -267,6 +288,7 @@ function injectTitlebar(): void {
         .update-row + .update-row { border-top-color: rgba(255, 255, 255, 0.08); }
         .update-row-meta { color: #a1a1aa; }
         .update-row-version { color: #d4d4d8; }
+        .update-spinner { border-color: rgba(212, 212, 216, 0.22); border-top-color: #d4d4d8; }
         .update-action { color: #f4f4f5; background: #3f3f46; }
         .update-action:hover { background: #52525b; }
         .update-check { color: #a1a1aa; }
@@ -286,7 +308,7 @@ function injectTitlebar(): void {
         <button class="update-trigger" data-state="idle" aria-label="版本更新" title="版本更新" aria-expanded="false">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle class="progress-ring" cx="12" cy="12" r="9" pathLength="100"></circle>
-            <path class="update-arrow" d="M20 7v5h-5M4 17v-5h5M6.1 8.5A7 7 0 0 1 18.4 7M17.9 15.5A7 7 0 0 1 5.6 17"></path>
+            <path class="update-symbol" d="M12 3.8v10.4M8.4 10.8 12 14.4l3.6-3.6M5 18.5h14"></path>
           </svg>
           <span class="update-dot" aria-hidden="true"></span>
         </button>
@@ -300,20 +322,22 @@ function injectTitlebar(): void {
               <div class="update-row-name"></div>
               <div class="update-row-meta">
                 <span class="update-row-version"></span>
-                <span class="update-row-status"></span>
+                <span class="update-status-line"><span class="update-spinner" aria-hidden="true"></span><span class="update-row-status"></span></span>
               </div>
             </div>
             <button class="update-action" hidden></button>
+            <div class="update-progress" hidden><div class="update-progress-bar"></div></div>
           </div>
           <div class="update-row harness-row">
             <div>
               <div class="update-row-name"></div>
               <div class="update-row-meta">
                 <span class="update-row-version"></span>
-                <span class="update-row-status"></span>
+                <span class="update-status-line"><span class="update-spinner" aria-hidden="true"></span><span class="update-row-status"></span></span>
               </div>
             </div>
             <button class="update-action" hidden></button>
+            <div class="update-progress" hidden><div class="update-progress-bar"></div></div>
           </div>
           <div class="update-footer">
             <span class="update-auto">客户端与 Harness 独立更新</span>
@@ -386,8 +410,8 @@ function injectTitlebar(): void {
       case "check-harness":
         harnessUpdate = await desktopBridge.checkHarnessUpdate();
         break;
-      case "show-harness":
-        harnessUpdate = await desktopBridge.showHarnessUpdate();
+      case "install-harness":
+        harnessUpdate = await desktopBridge.installHarnessUpdate();
         break;
     }
     renderUpdate();
@@ -404,19 +428,30 @@ function injectTitlebar(): void {
     const rowVersion = row.querySelector<HTMLElement>(".update-row-version");
     const status = row.querySelector<HTMLElement>(".update-row-status");
     const action = row.querySelector<HTMLButtonElement>(".update-action");
+    const progress = row.querySelector<HTMLElement>(".update-progress");
+    const progressBar = row.querySelector<HTMLElement>(".update-progress-bar");
     if (name) name.textContent = presentation.name;
     if (rowVersion) rowVersion.textContent = presentation.version;
+    row.dataset.busy = String(presentation.busy === true);
+    row.title = presentation.details ?? "";
     if (status) {
       status.textContent = presentation.status;
-      status.classList.toggle("update-error", presentation.status === "检查失败");
-      status.classList.toggle("update-current", presentation.status === "已是最新");
+      status.classList.toggle("update-error", presentation.tone === "error");
+      status.classList.toggle("update-current", presentation.tone === "success");
     }
     if (action) {
       action.hidden = presentation.action === undefined;
+      action.disabled = presentation.busy === true;
       action.textContent = presentation.action?.label ?? "";
       action.onclick = presentation.action
         ? () => void performAction(presentation.action as UpdateAction)
         : null;
+    }
+    if (progress) {
+      progress.hidden = presentation.progress === undefined;
+    }
+    if (progressBar) {
+      progressBar.style.width = `${Math.max(0, Math.min(100, presentation.progress ?? 0))}%`;
     }
   };
 
@@ -435,6 +470,11 @@ function injectTitlebar(): void {
     }[presentation.icon];
     updateTrigger.setAttribute("aria-label", updateTrigger.title);
     host.dataset.updateState = presentation.icon;
+    if (updateCheck) {
+      updateCheck.disabled = Boolean(
+        presentation.desktop.busy || presentation.harness.busy,
+      );
+    }
     if (progressRing) {
       progressRing.style.strokeDasharray = "100";
       progressRing.style.strokeDashoffset = String(100 - (desktopUpdate.percent ?? 0));

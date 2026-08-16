@@ -17,6 +17,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - name: Verify tag matches package version
         shell: pwsh
         run: |

@@ -46,6 +46,7 @@ app.whenReady().then(async () => {
       hasUpdateApi:
         typeof window.dshDesktop.checkClientUpdate === "function" &&
         typeof window.dshDesktop.checkHarnessUpdate === "function" &&
+        typeof window.dshDesktop.installHarnessUpdate === "function" &&
         typeof window.dshDesktop.downloadClientUpdate === "function" &&
         typeof window.dshDesktop.installClientUpdate === "function",
     };

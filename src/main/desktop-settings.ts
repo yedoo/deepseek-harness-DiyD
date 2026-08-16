@@ -3,6 +3,8 @@ import path from "node:path";
 
 export interface DesktopSettings {
   harnessRoot?: string;
+  dataRoot?: string;
+  managedHarnessEnabled?: boolean;
   skippedDesktopVersion?: string;
   skippedHarnessVersion?: string;
 }
@@ -15,6 +17,10 @@ export class DesktopSettingsStore {
       const value = JSON.parse(readFileSync(this.filePath, "utf8")) as DesktopSettings;
       return {
         ...(typeof value.harnessRoot === "string" ? { harnessRoot: value.harnessRoot } : {}),
+        ...(typeof value.dataRoot === "string" ? { dataRoot: value.dataRoot } : {}),
+        ...(typeof value.managedHarnessEnabled === "boolean"
+          ? { managedHarnessEnabled: value.managedHarnessEnabled }
+          : {}),
         ...(typeof value.skippedDesktopVersion === "string"
           ? { skippedDesktopVersion: value.skippedDesktopVersion }
           : {}),

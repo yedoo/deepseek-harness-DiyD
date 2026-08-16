@@ -8,7 +8,11 @@ import {
   Menu,
   shell,
 } from "electron";
-import { resolveHarnessRoot } from "./config";
+import {
+  inspectHarnessInstallation,
+  resolveHarnessInstallation,
+  type HarnessInstallation,
+} from "./config";
 import { DesktopSettingsStore } from "./desktop-settings";
 import {
   DesktopUpdater,
@@ -20,8 +24,13 @@ import {
   fetchLatestHarnessVersion,
   HarnessUpdater,
   type HarnessUpdateState,
+  type HarnessUpdateStage,
   readHarnessVersion,
 } from "./harness-updater";
+import {
+  HarnessRuntimeInstaller,
+  ArboristHarnessPackageInstaller,
+} from "./harness-runtime-installer";
 import { classifyNavigation } from "./navigation";
 import { RunningHarnessLocator } from "./running-harness-locator";
 import { chooseStartupStrategy } from "./startup-strategy";
@@ -47,6 +56,8 @@ let cleanupFinished = false;
 let settingsStore: DesktopSettingsStore | undefined;
 let desktopUpdater: DesktopUpdater | undefined;
 let harnessUpdater: HarnessUpdater | undefined;
+let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
+let activeHarnessInstallation: HarnessInstallation | undefined;
 let harnessUpdateUnsubscribe: (() => void) | undefined;
 let desktopInitialCheckTimer: NodeJS.Timeout | undefined;
 let desktopCheckInterval: NodeJS.Timeout | undefined;
@@ -54,7 +65,6 @@ let harnessInitialCheckTimer: NodeJS.Timeout | undefined;
 let harnessCheckInterval: NodeJS.Timeout | undefined;
 const UPDATE_CHECK_DELAY_MS = 2_500;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-const HARNESS_PACKAGE_URL = "https://www.npmjs.com/package/@deepseek-ai/dsh";
 const runningHarnessLocator = new RunningHarnessLocator();
 const workspaceDialogWatcher = new WorkspaceDialogForegroundWatcher(
   bringWorkspaceDialogToForeground,
@@ -101,7 +111,17 @@ void app.whenReady().then(async () => {
   }
   app.setAppUserModelId("com.yedoo.deepseek-harness-desktop");
   Menu.setApplicationMenu(null);
-  settingsStore = new DesktopSettingsStore(path.join(app.getPath("userData"), "settings.json"));
+  const userDataRoot = app.getPath("userData");
+  settingsStore = new DesktopSettingsStore(path.join(userDataRoot, "settings.json"));
+  harnessRuntimeInstaller = new HarnessRuntimeInstaller(
+    path.join(userDataRoot, "harness-runtime"),
+    new ArboristHarnessPackageInstaller({
+      nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+      workerPath: path.join(__dirname, "harness-package-worker.js"),
+      logsRoot: path.join(userDataRoot, "logs"),
+      runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+    }),
+  );
   registerDesktopIpc();
   mainWindow = createMainWindow();
   initializeDesktopUpdater();
@@ -165,22 +185,18 @@ async function startHarness(): Promise<void> {
 
   try {
     sendStatus({ phase: "starting", message: "正在检查已有的 Harness 服务…" });
+    const managedInstallation = preferredManagedInstallation();
     const strategy = await chooseStartupStrategy({
       preferredUrl: process.env.DSH_SERVER_URL,
+      preferInstallation: managedInstallation !== undefined,
       isHealthy: isHarnessHealthy,
       resolveHarnessInstallation: () => {
-        const harnessRoot = resolveHarnessRoot({
-          explicitRoot: process.env.DSH_INSTALL_ROOT ?? settingsStore?.load().harnessRoot,
-          appPath: app.getAppPath(),
-          cwd: process.cwd(),
-          executablePath: process.execPath,
-          resourcesPath: process.resourcesPath,
-        });
+        const installation = managedInstallation ?? resolveConfiguredHarnessInstallation();
+        const dataRoot = resolveHarnessDataRoot(installation);
+        rememberHarnessInstallation(installation, dataRoot);
         return {
-          harnessRoot,
-          dataRoot: path.resolve(
-            process.env.DSH_HOME ?? path.join(path.dirname(harnessRoot), "data"),
-          ),
+          installation,
+          dataRoot,
         };
       },
     });
@@ -189,38 +205,26 @@ async function startHarness(): Promise<void> {
       harnessService = undefined;
       harnessOrigin = new URL(strategy.url).origin;
       await mainWindow.loadURL(strategy.url);
-      const harnessRoot = await runningHarnessLocator.find() ?? tryResolveHarnessRoot();
-      if (harnessRoot) {
-        settingsStore?.update({ harnessRoot });
-        initializeHarnessUpdater(harnessRoot);
+      const discoveredRoot = await runningHarnessLocator.find();
+      const installation = discoveredRoot
+        ? inspectHarnessInstallation(discoveredRoot)
+        : tryResolveHarnessInstallation();
+      if (installation) {
+        const dataRoot = resolveHarnessDataRoot(installation);
+        rememberHarnessInstallation(installation, dataRoot);
+        activeHarnessInstallation = installation;
+        initializeHarnessUpdater(installation);
       }
       return;
     }
 
-    const { harnessRoot, dataRoot } = strategy.installation;
-    const logsRoot = path.join(app.getPath("userData"), "logs");
-    harnessService = new HarnessService({
-      harnessRoot,
+    const { installation, dataRoot } = strategy.installation;
+    await launchHarnessInstallation(
+      installation,
       dataRoot,
-      logsRoot,
-      nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
-      runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
-      preferredUrl: process.env.DSH_SERVER_URL,
-    });
-    harnessService.once("unexpected-exit", (error: Error) => {
-      void showLoading({
-        phase: "error",
-        message: "Harness 服务已停止",
-        details: error.message,
-      });
-    });
-
-    const connection = await harnessService.start((message) => {
-      sendStatus({ phase: "starting", message });
-    });
-    harnessOrigin = new URL(connection.url).origin;
-    await mainWindow.loadURL(connection.url);
-    initializeHarnessUpdater(harnessRoot);
+      installation.kind !== "managed",
+    );
+    initializeHarnessUpdater(installation);
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
     await showLoading({
@@ -232,6 +236,41 @@ async function startHarness(): Promise<void> {
   } finally {
     starting = false;
   }
+}
+
+async function launchHarnessInstallation(
+  installation: HarnessInstallation,
+  dataRoot: string,
+  reuseExisting: boolean,
+): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error("桌面窗口已经关闭");
+  }
+  const service = new HarnessService({
+    harnessRoot: installation.root,
+    cliPath: installation.cliPath,
+    dataRoot,
+    logsRoot: path.join(app.getPath("userData"), "logs"),
+    nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+    runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+    preferredUrl: process.env.DSH_SERVER_URL,
+    reuseExisting,
+  });
+  service.once("unexpected-exit", (error: Error) => {
+    void showLoading({
+      phase: "error",
+      message: "Harness 服务已停止",
+      details: error.message,
+    });
+  });
+  const connection = await service.start((message) => {
+    sendStatus({ phase: "starting", message });
+  });
+  harnessService = service;
+  harnessOrigin = new URL(connection.url).origin;
+  activeHarnessInstallation = installation;
+  rememberHarnessInstallation(installation, dataRoot);
+  await mainWindow.loadURL(connection.url);
 }
 
 async function showLoading(status: DesktopStatus): Promise<void> {
@@ -266,11 +305,15 @@ function initializeDesktopUpdater(): void {
   );
 }
 
-function initializeHarnessUpdater(harnessRoot: string): void {
+function initializeHarnessUpdater(installation: HarnessInstallation): void {
   resetHarnessUpdater();
   try {
-    const currentVersion = readHarnessVersion(harnessRoot);
-    harnessUpdater = new HarnessUpdater(currentVersion, fetchLatestHarnessVersion);
+    const currentVersion = readHarnessVersion(installation.root);
+    harnessUpdater = new HarnessUpdater(
+      currentVersion,
+      fetchLatestHarnessVersion,
+      applyHarnessUpdate,
+    );
     harnessUpdateUnsubscribe = harnessUpdater.subscribe(() => sendHarnessUpdateState());
     harnessInitialCheckTimer = setTimeout(
       () => void harnessUpdater?.check(),
@@ -302,18 +345,97 @@ function resetHarnessUpdater(notifyRenderer = true): void {
   }
 }
 
-function tryResolveHarnessRoot(): string | undefined {
+function preferredManagedInstallation(): HarnessInstallation | undefined {
+  if (
+    process.env.DSH_INSTALL_ROOT ||
+    process.env.DSH_SERVER_URL ||
+    settingsStore?.load().managedHarnessEnabled === false
+  ) {
+    return undefined;
+  }
+  return harnessRuntimeInstaller?.currentInstallation();
+}
+
+function resolveConfiguredHarnessInstallation(): HarnessInstallation {
+  return resolveHarnessInstallation({
+    explicitRoot: process.env.DSH_INSTALL_ROOT ?? settingsStore?.load().harnessRoot,
+    appPath: app.getAppPath(),
+    cwd: process.cwd(),
+    executablePath: process.execPath,
+    resourcesPath: process.resourcesPath,
+  });
+}
+
+function tryResolveHarnessInstallation(): HarnessInstallation | undefined {
   try {
-    return resolveHarnessRoot({
-      explicitRoot: process.env.DSH_INSTALL_ROOT ?? settingsStore?.load().harnessRoot,
-      appPath: app.getAppPath(),
-      cwd: process.cwd(),
-      executablePath: process.execPath,
-      resourcesPath: process.resourcesPath,
-    });
+    return preferredManagedInstallation() ?? resolveConfiguredHarnessInstallation();
   } catch {
     return undefined;
   }
+}
+
+function resolveHarnessDataRoot(installation?: HarnessInstallation): string {
+  const configured = process.env.DSH_HOME ?? settingsStore?.load().dataRoot;
+  if (configured) {
+    return path.resolve(configured);
+  }
+  if (installation?.kind === "checkout") {
+    return path.resolve(path.join(path.dirname(installation.root), "data"));
+  }
+  return path.join(app.getPath("userData"), "data");
+}
+
+function rememberHarnessInstallation(
+  installation: HarnessInstallation,
+  dataRoot: string,
+): void {
+  settingsStore?.update({
+    dataRoot,
+    ...(installation.kind === "checkout" ? { harnessRoot: installation.root } : {}),
+  });
+}
+
+async function applyHarnessUpdate(
+  version: string,
+  onStage: (stage: HarnessUpdateStage) => void,
+): Promise<void> {
+  if (!harnessRuntimeInstaller) {
+    throw new Error("Harness 更新运行时尚未初始化");
+  }
+
+  const fallbackInstallation = activeHarnessInstallation ?? tryResolveHarnessInstallation();
+  const dataRoot = resolveHarnessDataRoot(fallbackInstallation);
+  const prepared = await harnessRuntimeInstaller.prepare(version, onStage);
+  onStage("switching");
+  const activated = harnessRuntimeInstaller.activate(prepared);
+  settingsStore?.update({ managedHarnessEnabled: true, dataRoot });
+
+  try {
+    onStage("restarting");
+    await harnessService?.stop();
+    harnessService = undefined;
+    await launchHarnessInstallation(activated.installation, dataRoot, false);
+    harnessRuntimeInstaller.commit();
+  } catch (error) {
+    await harnessService?.stop();
+    harnessService = undefined;
+    const restored = harnessRuntimeInstaller.rollback() ?? fallbackInstallation;
+    settingsStore?.update({ managedHarnessEnabled: restored?.kind === "managed" });
+    if (restored) {
+      try {
+        await launchHarnessInstallation(restored, dataRoot, restored.kind !== "managed");
+      } catch (rollbackError) {
+        throw new Error(
+          `新版本启动失败，回滚后也未能恢复：${formatError(rollbackError)}`,
+        );
+      }
+    }
+    throw new Error(`新版本启动失败，已自动回滚：${formatError(error)}`);
+  }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function desktopStateForRenderer(): DesktopUpdateState & {
@@ -376,52 +498,19 @@ function sendHarnessUpdateState(): void {
 
 async function checkHarnessUpdates(): Promise<ReturnType<typeof harnessStateForRenderer>> {
   if (!harnessUpdater) {
-    const harnessRoot = await runningHarnessLocator.find() ?? tryResolveHarnessRoot();
-    if (harnessRoot) {
-      settingsStore?.update({ harnessRoot });
-      initializeHarnessUpdater(harnessRoot);
+    const discoveredRoot = await runningHarnessLocator.find();
+    const installation = discoveredRoot
+      ? inspectHarnessInstallation(discoveredRoot)
+      : tryResolveHarnessInstallation();
+    if (installation) {
+      const dataRoot = resolveHarnessDataRoot(installation);
+      rememberHarnessInstallation(installation, dataRoot);
+      activeHarnessInstallation = installation;
+      initializeHarnessUpdater(installation);
     }
   }
   await harnessUpdater?.check();
   return harnessStateForRenderer();
-}
-
-async function showHarnessUpdatePrompt(
-  state: Extract<HarnessUpdateState, { phase: "available" }>,
-): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: "info",
-    title: "DeepSeek Harness 更新",
-    message: `官方 Harness v${state.version} 已发布`,
-    detail: `当前本地版本为 v${state.currentVersion}。第一版仅提醒，不会覆盖你的源码目录。`,
-    buttons: ["打开官方 npm 页面", "跳过此版本", "取消"],
-    defaultId: 0,
-    cancelId: 2,
-    noLink: true,
-  });
-  if (result.response === 0) {
-    await shell.openExternal(HARNESS_PACKAGE_URL);
-  } else if (result.response === 1) {
-    settingsStore?.update({ skippedHarnessVersion: state.version });
-    sendHarnessUpdateState();
-  }
-}
-
-async function showDesktopUpdatesUnavailable(): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  await dialog.showMessageBox(mainWindow, {
-    type: "info",
-    title: "检查更新",
-    message: "开发模式不使用自动更新",
-    detail: "安装版会从 GitHub Releases 检查、下载并安装桌面客户端更新。",
-    buttons: ["知道了"],
-    noLink: true,
-  });
 }
 
 function disposeUpdateChecks(): void {
@@ -476,14 +565,17 @@ function registerDesktopIpc(): void {
       return false;
     }
     try {
-      const harnessRoot = resolveHarnessRoot({
+      const installation = resolveHarnessInstallation({
         explicitRoot: result.filePaths[0],
         appPath: app.getAppPath(),
         cwd: process.cwd(),
         executablePath: process.execPath,
         resourcesPath: process.resourcesPath,
       });
-      settingsStore?.update({ harnessRoot });
+      settingsStore?.update({
+        harnessRoot: installation.root,
+        managedHarnessEnabled: false,
+      });
       void (harnessService?.stop() ?? Promise.resolve()).finally(() => {
         harnessService = undefined;
         void startHarness();
@@ -507,7 +599,6 @@ function registerDesktopIpc(): void {
   ipcMain.handle("desktop:get-update-states", () => getUpdateStates());
   ipcMain.handle("desktop:check-client-update", async () => {
     if (!desktopUpdater) {
-      await showDesktopUpdatesUnavailable();
       return getUpdateStates().desktop;
     }
     await desktopUpdater.check();
@@ -519,11 +610,8 @@ function registerDesktopIpc(): void {
     return desktopStateForRenderer();
   });
   ipcMain.handle("desktop:install-client-update", () => desktopUpdater?.install() ?? false);
-  ipcMain.handle("desktop:show-harness-update", async () => {
-    const state = harnessUpdater?.getState();
-    if (state?.phase === "available") {
-      await showHarnessUpdatePrompt(state);
-    }
+  ipcMain.handle("desktop:install-harness-update", async () => {
+    await harnessUpdater?.install();
     return harnessStateForRenderer();
   });
 }

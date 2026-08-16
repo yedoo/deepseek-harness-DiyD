@@ -5,7 +5,13 @@ export type DesktopUpdateState =
   | { phase: "available"; currentVersion: string; version: string }
   | { phase: "downloading"; currentVersion: string; version: string; percent: number }
   | { phase: "downloaded"; currentVersion: string; version: string }
-  | { phase: "error"; currentVersion: string; message: string };
+  | {
+      phase: "error";
+      currentVersion: string;
+      message: string;
+      operation: "check" | "download";
+      version?: string;
+    };
 
 export interface DesktopUpdateTransport {
   check(): Promise<{ version: string } | null>;
@@ -19,6 +25,7 @@ export class DesktopUpdater {
   private state: DesktopUpdateState;
   private readonly listeners = new Set<DesktopUpdateListener>();
   private checkInFlight: Promise<DesktopUpdateState> | undefined;
+  private downloadInFlight: Promise<DesktopUpdateState> | undefined;
 
   constructor(
     private readonly currentVersion: string,
@@ -72,17 +79,36 @@ export class DesktopUpdater {
         phase: "error",
         currentVersion: this.currentVersion,
         message: error instanceof Error ? error.message : String(error),
+        operation: "check",
       };
       this.publish(state);
       return state;
     }
   }
 
-  async download(): Promise<DesktopUpdateState> {
-    if (this.state.phase !== "available") {
-      return this.state;
+  download(): Promise<DesktopUpdateState> {
+    if (this.downloadInFlight) {
+      return this.downloadInFlight;
     }
-    const version = this.state.version;
+    const version = this.state.phase === "available"
+      ? this.state.version
+      : this.state.phase === "error" && this.state.operation === "download"
+        ? this.state.version
+        : undefined;
+    if (!version) {
+      return Promise.resolve(this.state);
+    }
+    const download = this.performDownload(version);
+    this.downloadInFlight = download;
+    void download.finally(() => {
+      if (this.downloadInFlight === download) {
+        this.downloadInFlight = undefined;
+      }
+    });
+    return download;
+  }
+
+  private async performDownload(version: string): Promise<DesktopUpdateState> {
     this.publish({
       phase: "downloading",
       currentVersion: this.currentVersion,
@@ -109,7 +135,9 @@ export class DesktopUpdater {
       const state: DesktopUpdateState = {
         phase: "error",
         currentVersion: this.currentVersion,
+        version,
         message: error instanceof Error ? error.message : String(error),
+        operation: "download",
       };
       this.publish(state);
       return state;

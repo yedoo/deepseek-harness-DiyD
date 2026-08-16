@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "author": "yedoo",
   "description": "A minimal, frameless desktop host for DeepSeek Harness.",
@@ -79,6 +79,7 @@
     ]
   },
   "dependencies": {
+    "@npmcli/arborist": "9.9.1",
     "electron-updater": "^6.8.9",
     "koffi": "^3.1.0",
     "semver": "^7.7.3"

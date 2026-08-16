@@ -3,17 +3,18 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { HARNESS_CLI_RELATIVE_PATH } from "./config";
 import { isLoopbackHttpUrl } from "./navigation";
 
 export interface HarnessServiceOptions {
   harnessRoot: string;
+  cliPath: string;
   dataRoot: string;
   logsRoot: string;
   nodeExecutable: string;
   runElectronAsNode?: boolean;
   preferredUrl?: string;
   startupTimeoutMs?: number;
+  reuseExisting?: boolean;
 }
 
 export interface HarnessConnection {
@@ -32,7 +33,9 @@ export class HarnessService extends EventEmitter {
   }
 
   async start(onStatus: HarnessStatusListener = () => undefined): Promise<HarnessConnection> {
-    const reusableUrls = [this.options.preferredUrl, "http://127.0.0.1:3080"]
+    const reusableUrls = (this.options.reuseExisting === false
+      ? []
+      : [this.options.preferredUrl, "http://127.0.0.1:3080"])
       .filter((value): value is string => Boolean(value))
       .filter((value, index, values) => values.indexOf(value) === index)
       .filter(isLoopbackHttpUrl);
@@ -48,7 +51,6 @@ export class HarnessService extends EventEmitter {
     onStatus("正在分配本地端口…");
     const port = await findAvailablePort();
     const url = `http://127.0.0.1:${port}`;
-    const cliPath = path.join(this.options.harnessRoot, HARNESS_CLI_RELATIVE_PATH);
     mkdirSync(this.options.dataRoot, { recursive: true });
     mkdirSync(this.options.logsRoot, { recursive: true });
 
@@ -60,7 +62,7 @@ export class HarnessService extends EventEmitter {
     });
     const child = spawn(
       this.options.nodeExecutable,
-      [cliPath, "web", "--host", "127.0.0.1", "--port", String(port)],
+      [this.options.cliPath, "web", "--host", "127.0.0.1", "--port", String(port)],
       {
         cwd: this.options.harnessRoot,
         env: {

@@ -4,7 +4,7 @@ import type { DesktopUpdateTransport } from "./desktop-updater";
 export class ElectronUpdateTransport implements DesktopUpdateTransport {
   constructor() {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
     autoUpdater.logger = console;
   }

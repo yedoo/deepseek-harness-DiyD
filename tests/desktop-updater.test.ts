@@ -91,4 +91,59 @@ describe("DesktopUpdater", () => {
       version: "0.1.3",
     });
   });
+
+  it("can resume a desktop download after a transient failure", async () => {
+    let downloads = 0;
+    const transport: DesktopUpdateTransport = {
+      check: async () => ({ version: "0.2.0" }),
+      download: async () => {
+        downloads += 1;
+        if (downloads === 1) {
+          throw new Error("network reset");
+        }
+      },
+      install: () => undefined,
+    };
+    const updater = new DesktopUpdater("0.1.4", transport);
+
+    await updater.check();
+    await updater.download();
+    expect(updater.getState()).toMatchObject({
+      phase: "error",
+      operation: "download",
+      version: "0.2.0",
+    });
+
+    await updater.download();
+    expect(updater.getState()).toEqual({
+      phase: "downloaded",
+      currentVersion: "0.1.4",
+      version: "0.2.0",
+    });
+  });
+
+  it("coalesces a double-click into a single desktop download", async () => {
+    let downloads = 0;
+    let finishDownload: (() => void) | undefined;
+    const pendingDownload = new Promise<void>((resolve) => {
+      finishDownload = resolve;
+    });
+    const transport: DesktopUpdateTransport = {
+      check: async () => ({ version: "0.2.0" }),
+      download: async () => {
+        downloads += 1;
+        return pendingDownload;
+      },
+      install: () => undefined,
+    };
+    const updater = new DesktopUpdater("0.1.4", transport);
+    await updater.check();
+
+    const first = updater.download();
+    const second = updater.download();
+    finishDownload?.();
+    await Promise.all([first, second]);
+
+    expect(downloads).toBe(1);
+  });
 });

@@ -46,11 +46,57 @@ describe("HarnessUpdater", () => {
     temporaryDirectories.push(harnessRoot);
     const cliRoot = path.join(harnessRoot, "apps", "cli");
     mkdirSync(cliRoot, { recursive: true });
+    mkdirSync(path.join(cliRoot, "lib"), { recursive: true });
+    writeFileSync(path.join(cliRoot, "lib", "bin.js"), "");
     writeFileSync(
       path.join(cliRoot, "package.json"),
       JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.1.0-rc.5" }),
     );
 
     expect(readHarnessVersion(harnessRoot)).toBe("0.1.0-rc.5");
+  });
+
+  it("installs a detected version in-app and reports each safe-switch stage", async () => {
+    const stages: string[] = [];
+    const updater = new HarnessUpdater(
+      "0.1.0-rc.5",
+      async () => "0.1.0-rc.6",
+      async (_version, onStage) => {
+        for (const stage of ["downloading", "verifying", "switching", "restarting"] as const) {
+          stages.push(stage);
+          onStage(stage);
+        }
+      },
+    );
+
+    await updater.check();
+    await updater.install();
+
+    expect(stages).toEqual(["downloading", "verifying", "switching", "restarting"]);
+    expect(updater.getState()).toEqual({
+      phase: "up-to-date",
+      currentVersion: "0.1.0-rc.6",
+    });
+  });
+
+  it("keeps the old version actionable when an in-app install fails", async () => {
+    const updater = new HarnessUpdater(
+      "0.1.0-rc.5",
+      async () => "0.1.0-rc.6",
+      async () => {
+        throw new Error("health check failed");
+      },
+    );
+
+    await updater.check();
+    await updater.install();
+
+    expect(updater.getState()).toEqual({
+      phase: "error",
+      currentVersion: "0.1.0-rc.5",
+      version: "0.1.0-rc.6",
+      message: "health check failed",
+      operation: "install",
+    });
   });
 });
