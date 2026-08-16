@@ -86,6 +86,22 @@ export class HarnessRuntimeInstaller {
     };
   }
 
+  recoverFailedRuntime(expectedVersion: string): PreparedHarnessRuntime {
+    const installation = inspectHarnessInstallation(this.failedRoot);
+    if (!installation) {
+      throw new Error("没有找到可重试的 Harness 运行时");
+    }
+    const installedVersion = readPackageVersion(installation.packagePath);
+    if (installedVersion !== expectedVersion) {
+      throw new Error(
+        `失败版本校验失败：期望 ${expectedVersion}，实际 ${installedVersion}`,
+      );
+    }
+    rmSync(this.stagingRoot, { recursive: true, force: true });
+    renameSync(this.failedRoot, this.stagingRoot);
+    return { version: installedVersion, stagingRoot: this.stagingRoot };
+  }
+
   async prepare(
     version: string,
     onStatus: HarnessInstallStatus = () => undefined,
