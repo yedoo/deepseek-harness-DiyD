@@ -1,5 +1,8 @@
 import { autoUpdater } from "electron-updater";
-import type { DesktopUpdateTransport } from "./desktop-updater";
+import type {
+  DesktopDownloadProgress,
+  DesktopUpdateTransport,
+} from "./desktop-updater";
 
 export class ElectronUpdateTransport implements DesktopUpdateTransport {
   constructor() {
@@ -9,17 +12,35 @@ export class ElectronUpdateTransport implements DesktopUpdateTransport {
     autoUpdater.logger = console;
   }
 
-  async check(): Promise<{ version: string } | null> {
+  async check(): Promise<{ version: string; size?: number } | null> {
     const result = await autoUpdater.checkForUpdates();
     if (result?.isUpdateAvailable !== true) {
       return null;
     }
-    return { version: result.updateInfo.version };
+    const size = result.updateInfo.files.find((file) => file.size !== undefined)?.size;
+    return {
+      version: result.updateInfo.version,
+      ...(size === undefined ? {} : { size }),
+    };
   }
 
-  async download(onProgress: (percent: number) => void): Promise<void> {
-    const handleProgress = (progress: { percent: number }): void => {
-      onProgress(progress.percent);
+  async download(onProgress: (progress: DesktopDownloadProgress) => void): Promise<void> {
+    const handleProgress = (progress: {
+      percent: number;
+      transferred?: number;
+      total?: number;
+      bytesPerSecond?: number;
+    }): void => {
+      onProgress({
+        percent: progress.percent,
+        ...(progress.transferred === undefined
+          ? {}
+          : { transferredBytes: progress.transferred }),
+        ...(progress.total === undefined ? {} : { totalBytes: progress.total }),
+        ...(progress.bytesPerSecond === undefined
+          ? {}
+          : { bytesPerSecond: progress.bytesPerSecond }),
+      });
     };
     autoUpdater.on("download-progress", handleProgress);
     try {

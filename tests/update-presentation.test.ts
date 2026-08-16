@@ -40,6 +40,7 @@ describe("presentUpdates", () => {
         phase: "downloaded",
         currentVersion: "0.1.3",
         version: "0.1.4",
+        totalBytes: 104_857_600,
         supported: true,
       },
       harness: {
@@ -53,7 +54,7 @@ describe("presentUpdates", () => {
     expect(presentation.desktop).toEqual({
       name: "桌面客户端",
       version: "v0.1.3 → v0.1.4",
-      status: "下载完成，退出时也会安装",
+      status: "下载完成 · 100.0 MB，退出时自动安装",
       tone: "success",
       action: { kind: "install-desktop", label: "立即重启" },
     });
@@ -91,6 +92,9 @@ describe("presentUpdates", () => {
         currentVersion: "0.1.3",
         version: "0.1.4",
         percent: 42,
+        transferredBytes: 8_388_608,
+        totalBytes: 20_971_520,
+        bytesPerSecond: 1_572_864,
         supported: true,
       },
       harness: {
@@ -104,7 +108,7 @@ describe("presentUpdates", () => {
     expect(presentation.desktop).toEqual({
       name: "桌面客户端",
       version: "v0.1.3 → v0.1.4",
-      status: "正在下载 42%",
+      status: "42% · 8.0 MB / 20.0 MB · 1.5 MB/s",
       progress: 42,
     });
   });
@@ -147,6 +151,24 @@ describe("presentUpdates", () => {
     expect(presentation.icon).toBe("checking");
     expect(presentation.harness).toMatchObject({
       status: "正在校验新版本",
+      busy: true,
+    });
+  });
+
+  it("tells the user when an existing Harness runtime is being reused", () => {
+    const presentation = presentUpdates({
+      desktop: { phase: "up-to-date", currentVersion: "0.4.0", supported: true },
+      harness: {
+        phase: "installing",
+        currentVersion: "0.1.0-rc.6",
+        version: "0.1.0-rc.7",
+        stage: "reusing",
+        supported: true,
+      },
+    });
+
+    expect(presentation.harness).toMatchObject({
+      status: "正在复用现有依赖",
       busy: true,
     });
   });

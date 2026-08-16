@@ -16,11 +16,20 @@ import {
 
 const HARNESS_PACKAGE = "@deepseek-ai/dsh";
 
-export type HarnessInstallStage = "preparing" | "downloading" | "verifying";
+export type HarnessInstallStage =
+  | "preparing"
+  | "reusing"
+  | "downloading"
+  | "verifying";
 export type HarnessInstallStatus = (stage: HarnessInstallStage) => void;
 
 export interface HarnessPackageInstaller {
-  install(prefix: string, version: string, onStatus: HarnessInstallStatus): Promise<void>;
+  install(
+    prefix: string,
+    version: string,
+    onStatus: HarnessInstallStatus,
+    seedRoot?: string,
+  ): Promise<void>;
 }
 
 export interface PreparedHarnessRuntime {
@@ -114,9 +123,13 @@ export class HarnessRuntimeInstaller {
     mkdirSync(this.runtimeRoot, { recursive: true });
     rmSync(this.stagingRoot, { recursive: true, force: true });
     mkdirSync(this.stagingRoot, { recursive: true });
+    const seedRoot = this.currentInstallation() ? this.currentRoot : undefined;
+    if (seedRoot) {
+      onStatus("reusing");
+    }
 
     try {
-      await this.packageInstaller.install(this.stagingRoot, version, onStatus);
+      await this.packageInstaller.install(this.stagingRoot, version, onStatus, seedRoot);
       onStatus("verifying");
       const installation = inspectHarnessInstallation(this.stagingRoot);
       if (!installation) {
@@ -194,10 +207,11 @@ export class ArboristHarnessPackageInstaller implements HarnessPackageInstaller 
     prefix: string,
     version: string,
     onStatus: HarnessInstallStatus,
+    seedRoot?: string,
   ): Promise<void> {
-    onStatus("downloading");
     mkdirSync(this.options.logsRoot, { recursive: true });
     const logPath = path.join(this.options.logsRoot, "harness-update.log");
+    const cachePath = path.join(path.dirname(this.options.logsRoot), "npm-cache");
     const log = createWriteStream(logPath, { flags: "a" });
     log.write(`\n[${new Date().toISOString()}] Installing ${HARNESS_PACKAGE}@${version}\n`);
 
@@ -208,6 +222,8 @@ export class ArboristHarnessPackageInstaller implements HarnessPackageInstaller 
           this.options.workerPath,
           prefix,
           version,
+          cachePath,
+          ...(seedRoot ? [seedRoot] : []),
         ],
         {
           cwd: prefix,
@@ -216,7 +232,7 @@ export class ArboristHarnessPackageInstaller implements HarnessPackageInstaller 
             npm_config_update_notifier: "false",
             npm_config_audit: "false",
             npm_config_fund: "false",
-            npm_config_cache: path.join(path.dirname(this.options.logsRoot), "npm-cache"),
+            npm_config_cache: cachePath,
             ...(this.options.runElectronAsNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
           },
           stdio: ["ignore", "pipe", "pipe"],
@@ -224,7 +240,18 @@ export class ArboristHarnessPackageInstaller implements HarnessPackageInstaller 
         },
       );
 
-      child.stdout?.pipe(log, { end: false });
+      let stdoutBuffer = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        log.write(chunk);
+        stdoutBuffer += chunk.toString("utf8");
+        const lines = stdoutBuffer.split(/\r?\n/);
+        stdoutBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.trim() === "@dsh-update-stage:downloading") {
+            onStatus("downloading");
+          }
+        }
+      });
       child.stderr?.pipe(log, { end: false });
       let settled = false;
       let timeout: NodeJS.Timeout;

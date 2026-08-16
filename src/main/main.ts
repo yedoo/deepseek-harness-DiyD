@@ -308,7 +308,11 @@ function initializeDesktopUpdater(): void {
   if (!app.isPackaged) {
     return;
   }
-  desktopUpdater = new DesktopUpdater(app.getVersion(), new ElectronUpdateTransport());
+  desktopUpdater = new DesktopUpdater(
+    app.getVersion(),
+    new ElectronUpdateTransport(),
+    { autoDownload: true },
+  );
   desktopUpdater.subscribe(() => sendDesktopUpdateState());
   desktopInitialCheckTimer = setTimeout(() => void desktopUpdater?.check(), UPDATE_CHECK_DELAY_MS);
   desktopCheckInterval = setInterval(

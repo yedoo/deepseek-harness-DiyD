@@ -27,8 +27,18 @@ describe("DesktopUpdater", () => {
     const transport: DesktopUpdateTransport = {
       check: async () => ({ version: "0.1.3" }),
       download: async (onProgress) => {
-        onProgress(42);
-        onProgress(100);
+        onProgress({
+          percent: 42,
+          transferredBytes: 8_388_608,
+          totalBytes: 20_971_520,
+          bytesPerSecond: 1_572_864,
+        });
+        onProgress({
+          percent: 100,
+          transferredBytes: 20_971_520,
+          totalBytes: 20_971_520,
+          bytesPerSecond: 1_572_864,
+        });
       },
       install: () => {
         installed = true;
@@ -44,9 +54,49 @@ describe("DesktopUpdater", () => {
       phase: "downloaded",
       currentVersion: "0.1.2",
       version: "0.1.3",
+      totalBytes: 20_971_520,
     });
     expect(updater.install()).toBe(true);
     expect(installed).toBe(true);
+  });
+
+  it("starts downloading in the background when automatic downloads are enabled", async () => {
+    let downloads = 0;
+    let finishDownload: (() => void) | undefined;
+    const pendingDownload = new Promise<void>((resolve) => {
+      finishDownload = resolve;
+    });
+    const transport: DesktopUpdateTransport = {
+      check: async () => ({ version: "0.4.1", size: 104_857_600 }),
+      download: async () => {
+        downloads += 1;
+        return pendingDownload;
+      },
+      install: () => undefined,
+    };
+    const updater = new DesktopUpdater("0.4.0", transport, { autoDownload: true });
+    const downloaded = new Promise<void>((resolve) => {
+      updater.subscribe((state) => {
+        if (state.phase === "downloaded") {
+          resolve();
+        }
+      });
+    });
+
+    await updater.check();
+
+    expect(downloads).toBe(1);
+    expect(updater.getState()).toMatchObject({
+      phase: "downloading",
+      version: "0.4.1",
+      totalBytes: 104_857_600,
+    });
+    finishDownload?.();
+    await downloaded;
+    expect(updater.getState()).toMatchObject({
+      phase: "downloaded",
+      totalBytes: 104_857_600,
+    });
   });
 
   it("coalesces concurrent update checks into one network request", async () => {

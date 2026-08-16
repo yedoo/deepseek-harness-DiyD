@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,7 +25,10 @@ function runtimeRoot(): string {
 
 function fakePackageInstaller(installedVersion?: string): HarnessPackageInstaller {
   return {
-    install: async (prefix, version, onStatus) => {
+    install: async (prefix, version, onStatus, seedRoot) => {
+      if (seedRoot) {
+        cpSync(seedRoot, prefix, { recursive: true });
+      }
       onStatus("downloading");
       const packageRoot = path.join(prefix, "node_modules", "@deepseek-ai", "dsh");
       mkdirSync(path.join(packageRoot, "lib"), { recursive: true });
@@ -54,6 +57,34 @@ describe("HarnessRuntimeInstaller", () => {
     expect(stages).toEqual(["preparing", "downloading", "verifying"]);
     expect(activated.installation.kind).toBe("managed");
     expect(readHarnessVersion(installer.currentRoot)).toBe("0.1.0-rc.6");
+  });
+
+  it("seeds a managed update from the working runtime without modifying it", async () => {
+    const root = runtimeRoot();
+    const initialInstaller = new HarnessRuntimeInstaller(root, fakePackageInstaller());
+    initialInstaller.activate(await initialInstaller.prepare("0.1.0-rc.5"));
+    initialInstaller.commit();
+
+    let reusedRoot = "";
+    let reusedVersion = "";
+    const incrementalInstaller = new HarnessRuntimeInstaller(root, {
+      install: async (prefix, version, onStatus, seedRoot) => {
+        reusedRoot = seedRoot ?? "";
+        if (seedRoot) {
+          cpSync(seedRoot, prefix, { recursive: true });
+        }
+        reusedVersion = readHarnessVersion(prefix);
+        await fakePackageInstaller().install(prefix, version, onStatus);
+      },
+    });
+    const stages: string[] = [];
+
+    await incrementalInstaller.prepare("0.1.0-rc.6", (stage) => stages.push(stage));
+
+    expect(reusedRoot).toBe(incrementalInstaller.currentRoot);
+    expect(reusedVersion).toBe("0.1.0-rc.5");
+    expect(stages).toEqual(["preparing", "reusing", "downloading", "verifying"]);
+    expect(readHarnessVersion(incrementalInstaller.currentRoot)).toBe("0.1.0-rc.5");
   });
 
   it("recovers a verified staging runtime after the desktop app restarts", async () => {

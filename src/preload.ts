@@ -179,7 +179,7 @@ function injectTitlebar(): void {
         position: absolute;
         top: 40px;
         right: 0;
-        width: 330px;
+        width: 380px;
         box-sizing: border-box;
         border: 1px solid rgba(24, 24, 27, 0.12);
         border-radius: 12px;
@@ -317,7 +317,7 @@ function injectTitlebar(): void {
         <section class="update-panel" aria-label="版本更新" hidden>
           <div class="update-header">
             <span class="update-heading">版本更新</span>
-            <span class="update-auto">自动检查已开启</span>
+            <span class="update-auto">后台下载已开启</span>
           </div>
           <div class="update-row desktop-row">
             <div>
@@ -342,7 +342,7 @@ function injectTitlebar(): void {
             <div class="update-progress" hidden><div class="update-progress-bar"></div></div>
           </div>
           <div class="update-footer">
-            <span class="update-auto">客户端与 Harness 独立更新</span>
+            <span class="update-auto">客户端退出时安装 · Harness 安全切换</span>
             <button class="update-check">重新检查</button>
           </div>
         </section>

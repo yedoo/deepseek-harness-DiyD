@@ -1,21 +1,56 @@
+export interface DesktopUpdateRelease {
+  version: string;
+  size?: number;
+}
+
+export interface DesktopDownloadProgress {
+  percent: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  bytesPerSecond?: number;
+}
+
+export interface DesktopUpdaterOptions {
+  autoDownload?: boolean;
+}
+
 export type DesktopUpdateState =
   | { phase: "idle"; currentVersion: string }
   | { phase: "checking"; currentVersion: string }
   | { phase: "up-to-date"; currentVersion: string }
-  | { phase: "available"; currentVersion: string; version: string }
-  | { phase: "downloading"; currentVersion: string; version: string; percent: number }
-  | { phase: "downloaded"; currentVersion: string; version: string }
+  | {
+      phase: "available";
+      currentVersion: string;
+      version: string;
+      totalBytes?: number;
+    }
+  | {
+      phase: "downloading";
+      currentVersion: string;
+      version: string;
+      percent: number;
+      transferredBytes?: number;
+      totalBytes?: number;
+      bytesPerSecond?: number;
+    }
+  | {
+      phase: "downloaded";
+      currentVersion: string;
+      version: string;
+      totalBytes?: number;
+    }
   | {
       phase: "error";
       currentVersion: string;
       message: string;
       operation: "check" | "download";
       version?: string;
+      totalBytes?: number;
     };
 
 export interface DesktopUpdateTransport {
-  check(): Promise<{ version: string } | null>;
-  download(onProgress: (percent: number) => void): Promise<void>;
+  check(): Promise<DesktopUpdateRelease | null>;
+  download(onProgress: (progress: DesktopDownloadProgress) => void): Promise<void>;
   install(): void;
 }
 
@@ -30,6 +65,7 @@ export class DesktopUpdater {
   constructor(
     private readonly currentVersion: string,
     private readonly transport: DesktopUpdateTransport,
+    private readonly options: DesktopUpdaterOptions = {},
   ) {
     this.state = { phase: "idle", currentVersion };
   }
@@ -71,8 +107,12 @@ export class DesktopUpdater {
             phase: "available",
             currentVersion: this.currentVersion,
             version: release.version,
+            ...(release.size === undefined ? {} : { totalBytes: release.size }),
           };
       this.publish(state);
+      if (state.phase === "available" && this.options.autoDownload === true) {
+        void this.download();
+      }
       return state;
     } catch (error) {
       const state: DesktopUpdateState = {
@@ -90,15 +130,15 @@ export class DesktopUpdater {
     if (this.downloadInFlight) {
       return this.downloadInFlight;
     }
-    const version = this.state.phase === "available"
-      ? this.state.version
-      : this.state.phase === "error" && this.state.operation === "download"
-        ? this.state.version
-        : undefined;
+    const downloadableState = this.state.phase === "available" ||
+      (this.state.phase === "error" && this.state.operation === "download")
+      ? this.state
+      : undefined;
+    const version = downloadableState?.version;
     if (!version) {
       return Promise.resolve(this.state);
     }
-    const download = this.performDownload(version);
+    const download = this.performDownload(version, downloadableState.totalBytes);
     this.downloadInFlight = download;
     void download.finally(() => {
       if (this.downloadInFlight === download) {
@@ -108,36 +148,54 @@ export class DesktopUpdater {
     return download;
   }
 
-  private async performDownload(version: string): Promise<DesktopUpdateState> {
+  private async performDownload(
+    version: string,
+    knownTotalBytes?: number,
+  ): Promise<DesktopUpdateState> {
     this.publish({
       phase: "downloading",
       currentVersion: this.currentVersion,
       version,
       percent: 0,
+      ...(knownTotalBytes === undefined ? {} : { totalBytes: knownTotalBytes }),
     });
+    let lastProgress: DesktopDownloadProgress | undefined;
     try {
-      await this.transport.download((percent) => {
+      await this.transport.download((progress) => {
+        lastProgress = progress;
+        const totalBytes = progress.totalBytes ?? knownTotalBytes;
         this.publish({
           phase: "downloading",
           currentVersion: this.currentVersion,
           version,
-          percent: Math.max(0, Math.min(100, Math.round(percent))),
+          percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
+          ...(progress.transferredBytes === undefined
+            ? {}
+            : { transferredBytes: progress.transferredBytes }),
+          ...(totalBytes === undefined ? {} : { totalBytes }),
+          ...(progress.bytesPerSecond === undefined
+            ? {}
+            : { bytesPerSecond: progress.bytesPerSecond }),
         });
       });
+      const totalBytes = lastProgress?.totalBytes ?? knownTotalBytes;
       const state: DesktopUpdateState = {
         phase: "downloaded",
         currentVersion: this.currentVersion,
         version,
+        ...(totalBytes === undefined ? {} : { totalBytes }),
       };
       this.publish(state);
       return state;
     } catch (error) {
+      const totalBytes = lastProgress?.totalBytes ?? knownTotalBytes;
       const state: DesktopUpdateState = {
         phase: "error",
         currentVersion: this.currentVersion,
         version,
         message: error instanceof Error ? error.message : String(error),
         operation: "download",
+        ...(totalBytes === undefined ? {} : { totalBytes }),
       };
       this.publish(state);
       return state;

@@ -12,9 +12,12 @@ export interface UpdateChannelState {
   currentVersion: string;
   version?: string;
   percent?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
+  bytesPerSecond?: number;
   message?: string;
   operation?: "check" | "download" | "install";
-  stage?: "preparing" | "downloading" | "verifying";
+  stage?: "preparing" | "reusing" | "downloading" | "verifying";
   supported: boolean;
   skipped?: boolean;
 }
@@ -107,14 +110,16 @@ function presentDesktop(state: UpdateChannelState): UpdateRowPresentation {
       return {
         name: "桌面客户端",
         version: available,
-        status: `正在下载 ${state.percent ?? 0}%`,
+        status: desktopProgressLabel(state),
         progress: state.percent ?? 0,
       };
     case "downloaded":
       return {
         name: "桌面客户端",
         version: available,
-        status: "下载完成，退出时也会安装",
+        status: state.totalBytes === undefined
+          ? "下载完成，退出时也会安装"
+          : `下载完成 · ${formatBytes(state.totalBytes)}，退出时自动安装`,
         tone: "success",
         action: { kind: "install-desktop", label: "立即重启" },
       };
@@ -136,6 +141,31 @@ function presentDesktop(state: UpdateChannelState): UpdateRowPresentation {
         status: state.supported ? "等待自动检查" : "安装版中自动更新",
       };
   }
+}
+
+function desktopProgressLabel(state: UpdateChannelState): string {
+  const percent = `${state.percent ?? 0}%`;
+  if (state.transferredBytes === undefined || state.totalBytes === undefined) {
+    return `正在下载 ${percent}`;
+  }
+  const speed = state.bytesPerSecond === undefined
+    ? ""
+    : ` · ${formatBytes(state.bytesPerSecond)}/s`;
+  return `${percent} · ${formatBytes(state.transferredBytes)} / ${formatBytes(state.totalBytes)}${speed}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) {
+    return `${Math.max(0, Math.round(bytes))} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1_024;
+  let unit = units[0];
+  for (let index = 1; index < units.length && value >= 1_024; index += 1) {
+    value /= 1_024;
+    unit = units[index];
+  }
+  return `${value.toFixed(1)} ${unit}`;
 }
 
 function presentHarness(state: UpdateChannelState): UpdateRowPresentation {
@@ -201,8 +231,10 @@ function presentHarness(state: UpdateChannelState): UpdateRowPresentation {
 
 function harnessStageLabel(stage: UpdateChannelState["stage"]): string {
   switch (stage) {
+    case "reusing":
+      return "正在复用现有依赖";
     case "downloading":
-      return "正在下载并安装";
+      return "正在增量下载并安装";
     case "verifying":
       return "正在校验新版本";
     default:
