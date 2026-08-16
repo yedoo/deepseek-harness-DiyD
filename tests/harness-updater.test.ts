@@ -56,13 +56,13 @@ describe("HarnessUpdater", () => {
     expect(readHarnessVersion(harnessRoot)).toBe("0.1.0-rc.5");
   });
 
-  it("installs a detected version in-app and reports each safe-switch stage", async () => {
+  it("prepares a detected version without replacing the running Harness", async () => {
     const stages: string[] = [];
     const updater = new HarnessUpdater(
       "0.1.0-rc.5",
       async () => "0.1.0-rc.6",
       async (_version, onStage) => {
-        for (const stage of ["downloading", "verifying", "switching", "restarting"] as const) {
+        for (const stage of ["downloading", "verifying"] as const) {
           stages.push(stage);
           onStage(stage);
         }
@@ -72,10 +72,11 @@ describe("HarnessUpdater", () => {
     await updater.check();
     await updater.install();
 
-    expect(stages).toEqual(["downloading", "verifying", "switching", "restarting"]);
+    expect(stages).toEqual(["downloading", "verifying"]);
     expect(updater.getState()).toEqual({
-      phase: "up-to-date",
-      currentVersion: "0.1.0-rc.6",
+      phase: "ready-to-restart",
+      currentVersion: "0.1.0-rc.5",
+      version: "0.1.0-rc.6",
     });
   });
 

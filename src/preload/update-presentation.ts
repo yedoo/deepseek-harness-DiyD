@@ -7,13 +7,14 @@ export interface UpdateChannelState {
     | "downloading"
     | "downloaded"
     | "installing"
+    | "ready-to-restart"
     | "error";
   currentVersion: string;
   version?: string;
   percent?: number;
   message?: string;
   operation?: "check" | "download" | "install";
-  stage?: "preparing" | "downloading" | "verifying" | "switching" | "restarting";
+  stage?: "preparing" | "downloading" | "verifying";
   supported: boolean;
   skipped?: boolean;
 }
@@ -28,7 +29,8 @@ export type UpdateAction =
   | { kind: "download-desktop"; label: string }
   | { kind: "install-desktop"; label: string }
   | { kind: "check-harness"; label: string }
-  | { kind: "install-harness"; label: string };
+  | { kind: "install-harness"; label: string }
+  | { kind: "restart-harness"; label: string };
 
 export interface UpdateRowPresentation {
   name: string;
@@ -56,7 +58,10 @@ export function presentUpdates(states: UpdateStates): UpdatePresentation {
 }
 
 function presentIcon(states: UpdateStates): UpdatePresentation["icon"] {
-  if (states.desktop.phase === "downloaded") {
+  if (
+    states.desktop.phase === "downloaded" ||
+    states.harness.phase === "ready-to-restart"
+  ) {
     return "ready";
   }
   if (states.desktop.phase === "downloading") {
@@ -161,6 +166,14 @@ function presentHarness(state: UpdateChannelState): UpdateRowPresentation {
         status: harnessStageLabel(state.stage),
         busy: true,
       };
+    case "ready-to-restart":
+      return {
+        name: "DeepSeek Harness",
+        version: available,
+        status: "已准备好，重启后生效",
+        tone: "success",
+        action: { kind: "restart-harness", label: "立即重启" },
+      };
     case "error":
       return {
         name: "DeepSeek Harness",
@@ -192,10 +205,6 @@ function harnessStageLabel(stage: UpdateChannelState["stage"]): string {
       return "正在下载并安装";
     case "verifying":
       return "正在校验新版本";
-    case "switching":
-      return "正在安全切换版本";
-    case "restarting":
-      return "正在重启 Harness";
     default:
       return "正在准备更新";
   }

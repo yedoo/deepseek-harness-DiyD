@@ -54,6 +54,38 @@ export class HarnessRuntimeInstaller {
     return inspectHarnessInstallation(this.currentRoot);
   }
 
+  preparedRuntime(expectedVersion: string): PreparedHarnessRuntime {
+    const installation = inspectHarnessInstallation(this.stagingRoot);
+    if (!installation) {
+      throw new Error("没有找到已准备的 Harness 更新");
+    }
+    const installedVersion = readPackageVersion(installation.packagePath);
+    if (installedVersion !== expectedVersion) {
+      throw new Error(
+        `已准备版本校验失败：期望 ${expectedVersion}，实际 ${installedVersion}`,
+      );
+    }
+    return { version: installedVersion, stagingRoot: this.stagingRoot };
+  }
+
+  activeRuntime(expectedVersion: string): ActivatedHarnessRuntime {
+    const installation = this.currentInstallation();
+    if (!installation) {
+      throw new Error("没有找到已切换的 Harness 更新");
+    }
+    const installedVersion = readPackageVersion(installation.packagePath);
+    if (installedVersion !== expectedVersion) {
+      throw new Error(
+        `已切换版本校验失败：期望 ${expectedVersion}，实际 ${installedVersion}`,
+      );
+    }
+    return {
+      version: installedVersion,
+      installation,
+      hadPrevious: existsSync(this.previousRoot),
+    };
+  }
+
   async prepare(
     version: string,
     onStatus: HarnessInstallStatus = () => undefined,

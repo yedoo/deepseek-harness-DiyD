@@ -20,6 +20,8 @@ import {
 } from "./desktop-updater";
 import { ElectronUpdateTransport } from "./electron-update-transport";
 import { HarnessService, isHarnessHealthy } from "./harness-service";
+import { HarnessUpdateCoordinator } from "./harness-update-coordinator";
+import { HarnessUpdateTransactionStore } from "./harness-update-transaction";
 import {
   fetchLatestHarnessVersion,
   HarnessUpdater,
@@ -57,6 +59,7 @@ let settingsStore: DesktopSettingsStore | undefined;
 let desktopUpdater: DesktopUpdater | undefined;
 let harnessUpdater: HarnessUpdater | undefined;
 let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
+let harnessUpdateCoordinator: HarnessUpdateCoordinator | undefined;
 let activeHarnessInstallation: HarnessInstallation | undefined;
 let harnessUpdateUnsubscribe: (() => void) | undefined;
 let desktopInitialCheckTimer: NodeJS.Timeout | undefined;
@@ -122,9 +125,17 @@ void app.whenReady().then(async () => {
       runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
     }),
   );
+  harnessUpdateCoordinator = new HarnessUpdateCoordinator(
+    harnessRuntimeInstaller,
+    new HarnessUpdateTransactionStore(
+      path.join(userDataRoot, "harness-runtime", "update-transaction.json"),
+    ),
+    verifyHarnessRuntime,
+  );
   registerDesktopIpc();
   mainWindow = createMainWindow();
   initializeDesktopUpdater();
+  await applyPendingHarnessUpdate();
   await startHarness();
 });
 
@@ -399,43 +410,55 @@ async function applyHarnessUpdate(
   version: string,
   onStage: (stage: HarnessUpdateStage) => void,
 ): Promise<void> {
-  if (!harnessRuntimeInstaller) {
+  if (!harnessUpdateCoordinator) {
     throw new Error("Harness 更新运行时尚未初始化");
   }
 
-  const fallbackInstallation = activeHarnessInstallation ?? tryResolveHarnessInstallation();
-  const dataRoot = resolveHarnessDataRoot(fallbackInstallation);
-  const prepared = await harnessRuntimeInstaller.prepare(version, onStage);
-  onStage("switching");
-  const activated = harnessRuntimeInstaller.activate(prepared);
-  settingsStore?.update({ managedHarnessEnabled: true, dataRoot });
+  const currentInstallation = activeHarnessInstallation ?? tryResolveHarnessInstallation();
+  if (!currentInstallation) {
+    throw new Error("没有找到当前 Harness 运行时");
+  }
+  const currentVersion = readHarnessVersion(currentInstallation.root);
+  const dataRoot = resolveHarnessDataRoot(currentInstallation);
+  settingsStore?.update({ dataRoot });
+  await harnessUpdateCoordinator.prepare(currentVersion, version, onStage);
+}
 
-  try {
-    onStage("restarting");
-    await harnessService?.stop();
-    harnessService = undefined;
-    await launchHarnessInstallation(activated.installation, dataRoot, false);
-    harnessRuntimeInstaller.commit();
-  } catch (error) {
-    await harnessService?.stop();
-    harnessService = undefined;
-    const restored = harnessRuntimeInstaller.rollback() ?? fallbackInstallation;
-    settingsStore?.update({ managedHarnessEnabled: restored?.kind === "managed" });
-    if (restored) {
-      try {
-        await launchHarnessInstallation(restored, dataRoot, restored.kind !== "managed");
-      } catch (rollbackError) {
-        throw new Error(
-          `新版本启动失败，回滚后也未能恢复：${formatError(rollbackError)}`,
-        );
-      }
-    }
-    throw new Error(`新版本启动失败，已自动回滚：${formatError(error)}`);
+async function applyPendingHarnessUpdate(): Promise<void> {
+  const transaction = harnessUpdateCoordinator?.transaction();
+  if (!harnessUpdateCoordinator || !transaction || transaction.phase === "failed") {
+    return;
+  }
+  await showLoading({
+    phase: "starting",
+    message: transaction.phase === "applied"
+      ? `正在完成 Harness ${transaction.targetVersion} 更新…`
+      : `正在验证 Harness ${transaction.targetVersion}…`,
+  });
+  const result = await harnessUpdateCoordinator.applyPending();
+  if (result.status === "applied") {
+    settingsStore?.update({ managedHarnessEnabled: true });
+    harnessUpdateCoordinator.acknowledgeApplied();
   }
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+async function verifyHarnessRuntime(installation: HarnessInstallation): Promise<void> {
+  const probe = new HarnessService({
+    harnessRoot: installation.root,
+    cliPath: installation.cliPath,
+    dataRoot: resolveHarnessDataRoot(installation),
+    logsRoot: path.join(app.getPath("userData"), "logs"),
+    nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+    runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+    reuseExisting: false,
+  });
+  try {
+    await probe.start((message) => {
+      sendStatus({ phase: "starting", message: `正在验证更新：${message}` });
+    });
+  } finally {
+    await probe.stop();
+  }
 }
 
 function desktopStateForRenderer(): DesktopUpdateState & {
@@ -459,6 +482,25 @@ function harnessStateForRenderer(): (HarnessUpdateState & {
   supported: boolean;
   skipped?: boolean;
 }) | { phase: "idle"; currentVersion: string; supported: false } {
+  const transaction = harnessUpdateCoordinator?.transaction();
+  if (transaction) {
+    if (transaction.phase === "failed") {
+      return {
+        phase: "error",
+        currentVersion: transaction.currentVersion,
+        version: transaction.targetVersion,
+        message: transaction.message ?? "新版本启动失败，已恢复原版本",
+        operation: "install",
+        supported: true,
+      };
+    }
+    return {
+      phase: "ready-to-restart",
+      currentVersion: transaction.currentVersion,
+      version: transaction.targetVersion,
+      supported: true,
+    };
+  }
   const state = harnessUpdater?.getState();
   if (!state) {
     return { phase: "idle", currentVersion: "", supported: false };
@@ -610,7 +652,19 @@ function registerDesktopIpc(): void {
     return desktopStateForRenderer();
   });
   ipcMain.handle("desktop:install-client-update", () => desktopUpdater?.install() ?? false);
+  ipcMain.handle("desktop:restart-for-harness-update", () => {
+    const transaction = harnessUpdateCoordinator?.transaction();
+    if (!transaction || transaction.phase === "failed") {
+      return false;
+    }
+    app.relaunch();
+    app.quit();
+    return true;
+  });
   ipcMain.handle("desktop:install-harness-update", async () => {
+    if (harnessUpdateCoordinator?.dismissFailure()) {
+      await harnessUpdater?.check();
+    }
     await harnessUpdater?.install();
     return harnessStateForRenderer();
   });

@@ -170,4 +170,25 @@ describe("presentUpdates", () => {
       action: { kind: "install-harness", label: "重试更新" },
     });
   });
+
+  it("offers an application restart after a Harness update is prepared", () => {
+    const presentation = presentUpdates({
+      desktop: { phase: "up-to-date", currentVersion: "0.2.1", supported: true },
+      harness: {
+        phase: "ready-to-restart",
+        currentVersion: "0.1.0-rc.5",
+        version: "0.1.0-rc.6",
+        supported: true,
+      },
+    });
+
+    expect(presentation.icon).toBe("ready");
+    expect(presentation.harness).toEqual({
+      name: "DeepSeek Harness",
+      version: "rc.5 → rc.6",
+      status: "已准备好，重启后生效",
+      tone: "success",
+      action: { kind: "restart-harness", label: "立即重启" },
+    });
+  });
 });
