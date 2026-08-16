@@ -34,6 +34,20 @@ export class HarnessUpdateCoordinator {
     return true;
   }
 
+  retryFailure(): boolean {
+    const transaction = this.transactions.read();
+    if (transaction?.phase !== "failed") {
+      return false;
+    }
+    try {
+      this.runtime.recoverFailedRuntime(transaction.targetVersion);
+      this.transactions.prepare(transaction.currentVersion, transaction.targetVersion);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   acknowledgeApplied(): boolean {
     if (this.transactions.read()?.phase !== "applied") {
       return false;

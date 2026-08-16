@@ -222,4 +222,39 @@ describe("HarnessUpdateCoordinator", () => {
     });
     expect(restartedProcess.acknowledgeApplied()).toBe(true);
   });
+
+  it("reuses the downloaded runtime when the user retries a failed startup probe", async () => {
+    const root = testRoot();
+    const runtimeRoot = path.join(root, "runtime");
+    const transactionPath = path.join(root, "harness-update.json");
+    const runtime = new HarnessRuntimeInstaller(runtimeRoot, packageInstaller);
+    runtime.activate(await runtime.prepare("0.1.0-rc.5"));
+    runtime.commit();
+    const store = new HarnessUpdateTransactionStore(transactionPath);
+    const failedProcess = new HarnessUpdateCoordinator(runtime, store, async () => {
+      throw new Error("DeepSeek Harness 未能在 30 秒内启动。");
+    });
+    await failedProcess.prepare("0.1.0-rc.5", "0.1.0-rc.6");
+    await failedProcess.applyPending();
+
+    const retryProcess = new HarnessUpdateCoordinator(
+      new HarnessRuntimeInstaller(runtimeRoot, {
+        install: async () => {
+          throw new Error("retry must not download the package again");
+        },
+      }),
+      new HarnessUpdateTransactionStore(transactionPath),
+      async () => undefined,
+    );
+
+    expect(retryProcess.retryFailure()).toBe(true);
+    expect(retryProcess.transaction()).toMatchObject({
+      phase: "prepared",
+      targetVersion: "0.1.0-rc.6",
+    });
+    await expect(retryProcess.applyPending()).resolves.toMatchObject({
+      status: "applied",
+      version: "0.1.0-rc.6",
+    });
+  });
 });

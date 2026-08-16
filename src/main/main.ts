@@ -21,6 +21,7 @@ import {
 import { ElectronUpdateTransport } from "./electron-update-transport";
 import { HarnessService, isHarnessHealthy } from "./harness-service";
 import { HarnessUpdateCoordinator } from "./harness-update-coordinator";
+import { HarnessUpdateProbe } from "./harness-update-probe";
 import { HarnessUpdateTransactionStore } from "./harness-update-transaction";
 import {
   fetchLatestHarnessVersion,
@@ -443,22 +444,21 @@ async function applyPendingHarnessUpdate(): Promise<void> {
 }
 
 async function verifyHarnessRuntime(installation: HarnessInstallation): Promise<void> {
-  const probe = new HarnessService({
-    harnessRoot: installation.root,
-    cliPath: installation.cliPath,
-    dataRoot: resolveHarnessDataRoot(installation),
-    logsRoot: path.join(app.getPath("userData"), "logs"),
-    nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
-    runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
-    reuseExisting: false,
+  const probe = new HarnessUpdateProbe((candidate, startupTimeoutMs) => (
+    new HarnessService({
+      harnessRoot: candidate.root,
+      cliPath: candidate.cliPath,
+      dataRoot: resolveHarnessDataRoot(candidate),
+      logsRoot: path.join(app.getPath("userData"), "logs"),
+      nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+      runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+      reuseExisting: false,
+      startupTimeoutMs,
+    })
+  ));
+  await probe.verify(installation, (message) => {
+    sendStatus({ phase: "starting", message: `正在验证更新：${message}` });
   });
-  try {
-    await probe.start((message) => {
-      sendStatus({ phase: "starting", message: `正在验证更新：${message}` });
-    });
-  } finally {
-    await probe.stop();
-  }
 }
 
 function desktopStateForRenderer(): DesktopUpdateState & {
@@ -662,6 +662,10 @@ function registerDesktopIpc(): void {
     return true;
   });
   ipcMain.handle("desktop:install-harness-update", async () => {
+    if (harnessUpdateCoordinator?.retryFailure()) {
+      sendHarnessUpdateState();
+      return harnessStateForRenderer();
+    }
     if (harnessUpdateCoordinator?.dismissFailure()) {
       await harnessUpdater?.check();
     }
