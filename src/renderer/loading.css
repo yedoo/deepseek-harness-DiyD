@@ -1,0 +1,126 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  color: #18181b;
+  background: #f7f8fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(88, 128, 255, 0.08), transparent 32%),
+    #f7f8fa;
+}
+
+.shell {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+}
+
+.status-card {
+  width: min(420px, 100%);
+  text-align: center;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  border-radius: 13px;
+  background: #18181b;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 12px 36px rgba(24, 24, 27, 0.14);
+}
+
+h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+#status-message {
+  margin: 12px 0 0;
+  color: #71717a;
+  font-size: 14px;
+}
+
+.activity {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.activity span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #9ca3af;
+  animation: pulse 1.2s infinite ease-in-out;
+}
+
+.activity span:nth-child(2) { animation-delay: 0.15s; }
+.activity span:nth-child(3) { animation-delay: 0.3s; }
+
+.details {
+  max-width: 380px;
+  margin: 10px auto 0;
+  color: #a1a1aa;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+button {
+  min-width: 96px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #27272a;
+  font: inherit;
+  font-size: 13px;
+}
+
+button:hover { background: #fff; }
+button.primary { border-color: #18181b; background: #18181b; color: #fff; }
+button.primary:hover { background: #27272a; }
+
+@keyframes pulse {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { color: #f4f4f5; background: #111113; }
+  body {
+    background:
+      radial-gradient(circle at 50% 45%, rgba(88, 128, 255, 0.12), transparent 32%),
+      #111113;
+  }
+  .brand-mark { background: #f4f4f5; color: #18181b; }
+  #status-message { color: #a1a1aa; }
+  button { border-color: #3f3f46; background: #27272a; color: #f4f4f5; }
+  button:hover { background: #3f3f46; }
+  button.primary { border-color: #f4f4f5; background: #f4f4f5; color: #18181b; }
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DeepSeek Harness Desktop</title>
+    <link rel="icon" href="favicon.svg" />
+    <link rel="stylesheet" href="loading.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="status-card" aria-live="polite">
+        <div class="brand-mark" aria-hidden="true">DS</div>
+        <h1>DeepSeek Harness</h1>
+        <p id="status-message">正在准备桌面工作台…</p>
+        <div class="activity" id="activity" aria-label="正在启动">
+          <span></span><span></span><span></span>
+        </div>
+        <p class="details" id="status-details"></p>
+        <div class="actions" id="error-actions" hidden>
+          <button class="primary" id="retry-button">重新尝试</button>
+          <button class="primary" id="select-button" hidden>选择 Harness 目录</button>
+          <button id="logs-button">打开日志</button>
+        </div>
+      </section>
+    </main>
+    <script src="loading.js"></script>
+  </body>
+</html>

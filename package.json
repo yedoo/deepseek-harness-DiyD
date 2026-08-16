@@ -1,0 +1,87 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "author": "yedoo",
+  "description": "A minimal, frameless desktop host for DeepSeek Harness.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedoo/deepseek-harness-DiyD.git"
+  },
+  "homepage": "https://github.com/yedoo/deepseek-harness-DiyD",
+  "bugs": {
+    "url": "https://github.com/yedoo/deepseek-harness-DiyD/issues"
+  },
+  "main": "dist/main/main.js",
+  "scripts": {
+    "prebuild": "node scripts/build-icon.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/build-preload.mjs && node scripts/copy-static.mjs",
+    "dev": "npm run build && electron .",
+    "test": "vitest run",
+    "test:titlebar": "electron scripts/check-titlebar.cjs",
+    "test:packaged-native": "electron scripts/check-packaged-native.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win nsis"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/semver": "^7.7.1",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "sharp": "^0.35.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.yedoo.deepseek-harness-desktop",
+    "productName": "DeepSeek Harness Desktop",
+    "artifactName": "DeepSeek-Harness-Desktop-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@koromix/koffi-win32-x64/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yedoo",
+        "repo": "deepseek-harness-DiyD",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "@npmcli/arborist": "9.9.1",
+    "electron-updater": "^6.8.9",
+    "koffi": "^3.1.0",
+    "semver": "^7.7.3"
+  }
+}
