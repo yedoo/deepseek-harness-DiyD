@@ -32,9 +32,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.2" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.3" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.2", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.3", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {
@@ -161,9 +161,16 @@ app.whenReady().then(async () => {
   const nativeThemeRegression = await window.webContents.executeJavaScript(`new Promise((resolve) => {
     document.body.setAttribute('data-ds-dark-theme', '');
     requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.body.setAttribute('data-dsh-appearance-background', 'true');
       const host = document.querySelector('[data-dsh-appearance-panel]');
-      resolve({ preserved: document.body.hasAttribute('data-ds-dark-theme'), hostColor: host ? getComputedStyle(host).color : '', inlineLabelColor: document.body.style.getPropertyValue('--dsw-alias-label-primary') });
+      resolve({
+        preserved: document.body.hasAttribute('data-ds-dark-theme'),
+        hostColor: host ? getComputedStyle(host).color : '',
+        inlineLabelColor: document.body.style.getPropertyValue('--dsw-alias-label-primary'),
+        sidebarFill: getComputedStyle(document.body).getPropertyValue('--dsw-specific-sidebar-fill').trim(),
+      });
       document.body.removeAttribute('data-ds-dark-theme');
+      document.body.setAttribute('data-dsh-appearance-background', 'false');
     }));
   })`);
   const regressionProblems = [];
@@ -177,6 +184,7 @@ app.whenReady().then(async () => {
   const nativeDarkTextIsLight = nativeDarkTextChannels.length >= 3
     && nativeDarkTextChannels.slice(0, 3).every((channel) => channel >= 220);
   if (!nativeThemeRegression.preserved || !nativeDarkTextIsLight || nativeThemeRegression.inlineLabelColor !== '') regressionProblems.push(`native dark theme not inherited: ${JSON.stringify(nativeThemeRegression)}`);
+  if (nativeThemeRegression.sidebarFill !== 'transparent') regressionProblems.push(`wallpaper sidebar is not transparent: ${JSON.stringify(nativeThemeRegression)}`);
   if (regressionProblems.length) throw new Error(`Appearance regression: ${regressionProblems.join('; ')}`);
   if (settingsScreenshotPath) {
     window.showInactive();

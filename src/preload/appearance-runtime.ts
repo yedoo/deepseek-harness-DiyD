@@ -81,7 +81,7 @@ function installStyle(registry: AppearanceProviderRegistry): void {
     #${LAYER_ID} .dsh-art-composer { left: 50%; bottom: 8%; width: min(780px, 58vw); max-height: 32%; transform: translateX(-50%); object-position: center bottom; }
     body[data-dsh-appearance-background="true"] {
       --dsw-alias-bg-base: transparent;
-      --dsw-specific-sidebar-fill: color-mix(in srgb, var(--dsh-appearance-sidebar, white) calc(var(--dsh-appearance-panel-opacity) * 100%), transparent);
+      --dsw-specific-sidebar-fill: transparent;
       --dsw-specific-input-major: rgba(255,255,255,var(--dsh-appearance-panel-opacity));
       --dsw-specific-bubble: rgba(255,255,255,calc(var(--dsh-appearance-panel-opacity) * .82));
       --dsw-alias-border-l1: rgba(160,160,170,var(--dsh-appearance-border-alpha));
