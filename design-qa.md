@@ -1,69 +1,48 @@
-# Design QA
+# Appearance settings design QA
 
-final result: passed
+- Source visual truth: `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-37933ec8-7e06-4d92-b91b-a8174349ba60.png`
+- Same-build native reference: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.6\native-model-1128x1067.png`
+- Implementation screenshot: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.6\appearance-1128x1067.png`
+- Combined comparison: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.6\native-model-vs-appearance.png`
+- Viewport: 1128 × 1067 CSS px, Windows device scale factor 1.25
+- Pixel dimensions: native reference 1412 × 1337 px; implementation 1412 × 1337 px; no density normalization was needed for the same-build comparison
+- State: desktop settings modal, dark mode, Model page compared with Appearance page
 
-## Evidence
+## Full-view comparison evidence
 
-- source: `C:\Users\TianYe\.codex\generated_images\01a00880-43f8-75b0-8fcd-1be281045c1a\exec-0eedaee0-73cf-40a3-8ada-3431dc0366cc.png`
-- source dimensions: 1562 × 1007
-- implementation: `D:\DeepSeek\deepseek-harness-desktop\.tmp-market-qa.png`
-- online-search implementation: `D:\DeepSeek\deepseek-harness-desktop\.tmp-market-online-qa.png`
-- implementation dimensions: 2192 × 1413 (Windows DPI-scaled capture; same 1.551 aspect ratio)
-- implementation route/state: Electron `BrowserWindow`, Settings → Plugins → Plugin Market, bundled visual fixture with one installed plugin
-- comparison method: source and implementation were rendered together in one full-frame comparison; the modal fills most of both frames and card text remains legible, so a separate crop was not required
+The same-build side-by-side comparison shows that the Appearance page now begins on the same content grid as the native Model page. The settings navigation, page heading, description, header action row, modal bounds, and right content edge preserve the native hierarchy. The page remains vertically scrollable, while no scrollbar track or thumb is visible.
+
+## Focused region comparison evidence
+
+Programmatic measurements in the live Harness window verify the critical region:
+
+- Native and Appearance heading: top 54px, left 212px, font size 16px, line height 24px, weight 500.
+- Native and Appearance description: top 90px, left 212px, font size 14px, line height 22px.
+- Native and Appearance header action top: 20px.
+- Appearance scroll container: `overflow-y: auto`, scrollbar width 0px, bottom content reachable.
+
+Focused metrics were used because typography and the hidden scrollbar are more reliable to judge from computed geometry than from a scaled full-window screenshot.
+
+## Required fidelity surfaces
+
+- Fonts and typography: passed; title and description inherit the native page's measured size, line height, and weight.
+- Spacing and layout rhythm: passed; content top and left insets match the native page and the right inset remains 24px.
+- Colors and visual tokens: passed; Appearance continues to inherit the existing Harness dark-mode tokens.
+- Image quality and asset fidelity: not applicable; this fix adds or replaces no imagery.
+- Copy and content: passed; existing Appearance labels and copy are unchanged.
 
 ## Comparison history
 
-### Iteration 1
+1. Initial comparison found a P1 hierarchy mismatch: the Appearance title started 54px too high and 24px too far left, using 22px / 31.9px / weight 700 instead of the native 16px / 24px / weight 500. It also found a P2 scrollbar mismatch: a 15px white scrollbar was visible.
+2. The Appearance-only Shadow DOM now reads the visible native page's layout and typography metrics before activation, applies those values to its own header, and hides the scrollbar without disabling scrolling.
+3. The post-fix live comparison reports exact title and description alignment, a 0px scrollbar width, and reachable bottom content. Fixture and live regression checks both pass.
 
-- The market was injected without changing the desktop title bar, Harness workbench, settings modal, or left settings navigation.
-- The primary hierarchy, tab underline, search field, category row, compact horizontal cards, install controls, dimmed backdrop, and modal proportions matched the approved design.
-- P2 fixes identified: curated cards exposed package-style names instead of the friendly approved labels; the footer alignment did not match; a restored restart notice could incorrectly offer one-click restart for an externally connected Harness.
+## Findings
 
-### Iteration 2
+No actionable P0, P1, or P2 differences remain for the requested Appearance-page alignment.
 
-- Added friendly presentation names while retaining the real package identity for installation.
-- Aligned the community-permission footer with the card column.
-- Made restart availability part of the market snapshot so restored notices reflect the actual Harness connection mode.
-- Re-ran the same-state comparison and interaction smoke test.
+## Follow-up polish
 
-### Iteration 3 — open discovery
+No P3 work is required for this fix.
 
-- Preserved the approved workbench, settings modal, navigation, density, and monochrome visual language.
-- Extended the existing search field instead of adding another market page: curated results are filtered immediately, while npm and GitHub discovery runs after a short debounce.
-- Added compact provenance badges (`已审核`, `npm · 未审核`, `GitHub · 未审核`) and version metadata without changing card height.
-- Verified the online-result state with `dsh-plugin-wallpaper-engine`; the result remains readable and the unreviewed status is visible before installation.
-
-### Iteration 4 — category cleanup
-
-- Removed the duplicate `搜索` category; the search field is now the only market-search control.
-- Search/browser plugins are grouped under the existing tool classification instead of maintaining a second search concept.
-- Added an Electron interaction assertion so the duplicate category cannot silently return.
-
-### Iteration 5 — tab isolation
-
-- Corrected the Shadow DOM host rule so a hidden market panel computes to `display: none`.
-- Verified the market starts hidden, appears only after selecting `插件市场`, and hides again when either native plugin tab is selected.
-- Added the visibility transitions to the Electron interaction smoke test.
-
-## Final severity assessment
-
-- P0 blockers: none
-- P1 major issues: none
-- P2 visual or functional mismatches: none
-- P3 intentional differences:
-  - The existing Harness tab label remains `插件列表` instead of replacing it with an installed-count label; this preserves the host UI outside the new market tab.
-  - Repository avatars use live GitHub identicons instead of invented logos; failed images collapse cleanly.
-  - A small `刷新目录` action and an uninstall action are present because they are required for a functioning independent market.
-  - The title bar shows v0.6.2, the release fixing plugin-tab isolation.
-
-## Interaction verification
-
-- Plugin market tab mounts inside the existing settings plugin section.
-- Search reduces the fixture catalog to one result.
-- Install opens an explicit confirmation dialog showing the command and permission warning.
-- Confirmed installation updates installed state and exposes the Harness restart action.
-- Catalog source validation rejects non-GitHub repositories and unsafe install commands.
-- Online discovery rejects packages without an explicit DSH bundle/client declaration and excludes internal runtime packages.
-- The renderer can install only server-verified result IDs; direct npm package names and GitHub URLs are resolved by the main process before confirmation.
-- All automated tests, TypeScript checks, Electron market smoke checks, and title-bar smoke checks passed.
+final result: passed

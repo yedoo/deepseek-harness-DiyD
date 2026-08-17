@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 
 const screenshotPath = process.env.DSH_APPEARANCE_SCREENSHOT;
 const settingsScreenshotPath = process.env.DSH_APPEARANCE_SETTINGS_SCREENSHOT;
+const nativeScreenshotPath = process.env.DSH_APPEARANCE_NATIVE_SCREENSHOT;
 const targetUrl = process.env.DSH_APPEARANCE_TEST_URL;
 const testWidth = Number(process.env.DSH_APPEARANCE_TEST_WIDTH || 1752);
 const testHeight = Number(process.env.DSH_APPEARANCE_TEST_HEIGHT || 1128);
@@ -32,9 +33,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.5" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.6" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.5", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.6", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {
@@ -75,6 +76,21 @@ async function waitFor(window, expression, timeout = 10000) {
   throw new Error(`Timed out: ${expression}`);
 }
 
+async function clickWhenPresent(window, label, timeout = 2000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const clicked = await window.webContents.executeJavaScript(`(() => {
+      const button = [...document.querySelectorAll('button,[role=button]')]
+        .find(el => el.textContent?.trim() === ${JSON.stringify(label)} && el.getBoundingClientRect().width > 0);
+      button?.click();
+      return Boolean(button);
+    })()`);
+    if (clicked) return true;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+  return false;
+}
+
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
     width: testWidth,
@@ -107,6 +123,58 @@ app.whenReady().then(async () => {
     console.error(JSON.stringify(diagnostic));
     throw error;
   }
+  if (targetUrl) {
+    await clickWhenPresent(window, '稍后配置', 250);
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('button,[role=button]')].find(el => el.textContent?.trim() === '模型')?.click()`);
+    await waitFor(window, `[...document.querySelectorAll('h1,h2,h3')].some(el => el.textContent?.trim() === '模型' && el.getBoundingClientRect().width > 0)`);
+    await clickWhenPresent(window, '稍后配置');
+    await waitFor(window, `document.querySelector('[data-dsh-appearance-nav]')`);
+  }
+  const nativeReference = await window.webContents.executeJavaScript(`(() => {
+    const appearanceNav = document.querySelector('[data-dsh-appearance-nav]');
+    const modal = appearanceNav?.closest('[role=dialog]') || appearanceNav?.closest('section') || appearanceNav?.parentElement?.parentElement;
+    const host = document.querySelector('[data-dsh-appearance-panel]');
+    const heading = [...document.querySelectorAll('h1,h2,h3')].find((element) => {
+      const text = element.textContent?.trim();
+      const rect = element.getBoundingClientRect();
+      return text && !['设置', 'Settings'].includes(text) && !appearanceNav?.parentElement?.contains(element) && rect.width > 0 && rect.height > 0;
+    });
+    const description = heading?.nextElementSibling?.tagName === 'P' ? heading.nextElementSibling : null;
+    const rect = modal?.getBoundingClientRect();
+    const headingRect = heading?.getBoundingClientRect();
+    const descriptionRect = description?.getBoundingClientRect();
+    const headingStyle = heading ? getComputedStyle(heading) : null;
+    const descriptionStyle = description ? getComputedStyle(description) : null;
+    const openConfig = [...document.querySelectorAll('button,[role=button]')]
+      .find((element) => ['打开配置文件', 'Open config file'].includes(element.textContent?.trim()) && element.getBoundingClientRect().width > 0);
+    const openConfigRect = openConfig?.getBoundingClientRect();
+    const closeButton = [...document.querySelectorAll('button')]
+      .find((element) => ['关闭', 'Close'].includes(element.getAttribute('aria-label')) && element.getBoundingClientRect().width > 0);
+    const closeRect = closeButton?.getBoundingClientRect();
+    return {
+      modal: rect ? { top: rect.top, left: rect.left } : null,
+      heading: headingRect && rect && headingStyle ? {
+        text: heading.textContent?.trim(), top: headingRect.top - rect.top, left: headingRect.left - rect.left,
+        fontSize: headingStyle.fontSize, lineHeight: headingStyle.lineHeight, fontWeight: headingStyle.fontWeight,
+      } : null,
+      description: descriptionRect && rect && descriptionStyle ? {
+        top: descriptionRect.top - rect.top, left: descriptionRect.left - rect.left,
+        fontSize: descriptionStyle.fontSize, lineHeight: descriptionStyle.lineHeight,
+      } : null,
+      headerAction: openConfigRect && rect ? { top: openConfigRect.top - rect.top, right: rect.right - openConfigRect.right } : null,
+      closeAction: closeRect && rect ? {
+        top: closeRect.top - rect.top, right: rect.right - closeRect.right,
+        width: closeRect.width, height: closeRect.height,
+        gap: openConfigRect ? closeRect.left - openConfigRect.right : null,
+      } : null,
+      host: host ? { parentClass: host.parentElement?.className, parentRect: host.parentElement ? { top: host.parentElement.getBoundingClientRect().top - rect.top, left: host.parentElement.getBoundingClientRect().left - rect.left } : null } : null,
+    };
+  })()`);
+  if (nativeScreenshotPath) {
+    window.showInactive();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    writeFileSync(nativeScreenshotPath, (await window.webContents.capturePage()).toPNG());
+  }
   const legacyWallpaperPickerDisplay = await window.webContents.executeJavaScript(`document.querySelector('.we-picker') ? getComputedStyle(document.querySelector('.we-picker')).display : 'absent'`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-nav]').click()`);
   await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelectorAll('.source-card').length === 3`);
@@ -125,12 +193,23 @@ app.whenReady().then(async () => {
     const rect = modal?.getBoundingClientRect();
     const shell = root?.querySelector('.shell');
     const shellRect = shell?.getBoundingClientRect();
+    const appearanceHeading = root?.querySelector('header h2');
+    const appearanceDescription = root?.querySelector('header p');
+    const appearanceHeadingRect = appearanceHeading?.getBoundingClientRect();
+    const appearanceDescriptionRect = appearanceDescription?.getBoundingClientRect();
+    const appearanceHeadingStyle = appearanceHeading ? getComputedStyle(appearanceHeading) : null;
+    const appearanceDescriptionStyle = appearanceDescription ? getComputedStyle(appearanceDescription) : null;
+    const appearanceHeaderAction = root?.querySelector('[data-native-action=open-config]');
+    const appearanceHeaderActionRect = appearanceHeaderAction?.getBoundingClientRect();
+    const appearanceCloseAction = root?.querySelector('[data-native-action=close]');
+    const appearanceCloseActionRect = appearanceCloseAction?.getBoundingClientRect();
     const contentEdges = root ? [...root.querySelectorAll('.tabs,.block')].map((element) => element.getBoundingClientRect().right) : [];
     const lastContent = root?.querySelector('.extension-card') || root?.querySelector('.block:last-child');
     if (shell) shell.scrollTop = shell.scrollHeight;
     const lastContentRect = lastContent?.getBoundingClientRect();
     const layout = shell && shellRect ? {
       overflowY: getComputedStyle(shell).overflowY,
+      scrollbarWidth: shell.offsetWidth - shell.clientWidth,
       clientHeight: shell.clientHeight,
       scrollHeight: shell.scrollHeight,
       scrollTopAtBottom: shell.scrollTop,
@@ -148,6 +227,24 @@ app.whenReady().then(async () => {
         paddingTop: getComputedStyle(hostParent).paddingTop,
         paddingBottom: getComputedStyle(hostParent).paddingBottom,
       } : null,
+      heading: appearanceHeadingRect && rect && appearanceHeadingStyle ? {
+        top: appearanceHeadingRect.top - rect.top, left: appearanceHeadingRect.left - rect.left,
+        fontSize: appearanceHeadingStyle.fontSize, lineHeight: appearanceHeadingStyle.lineHeight, fontWeight: appearanceHeadingStyle.fontWeight,
+      } : null,
+      description: appearanceDescriptionRect && rect && appearanceDescriptionStyle ? {
+        top: appearanceDescriptionRect.top - rect.top, left: appearanceDescriptionRect.left - rect.left,
+        fontSize: appearanceDescriptionStyle.fontSize, lineHeight: appearanceDescriptionStyle.lineHeight,
+      } : null,
+      headerAction: appearanceHeaderActionRect && rect ? {
+        top: appearanceHeaderActionRect.top - rect.top,
+        right: rect.right - appearanceHeaderActionRect.right,
+      } : null,
+      closeAction: appearanceCloseActionRect && rect ? {
+        top: appearanceCloseActionRect.top - rect.top,
+        right: rect.right - appearanceCloseActionRect.right,
+        width: appearanceCloseActionRect.width, height: appearanceCloseActionRect.height,
+        gap: appearanceHeaderActionRect ? appearanceCloseActionRect.left - appearanceHeaderActionRect.right : null,
+      } : null,
     } : null;
     if (shell) shell.scrollTop = 0;
     return {
@@ -159,6 +256,7 @@ app.whenReady().then(async () => {
     };
   })()`);
   const nativeThemeRegression = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+    const originallyDark = document.body.hasAttribute('data-ds-dark-theme');
     document.body.setAttribute('data-ds-dark-theme', '');
     requestAnimationFrame(() => requestAnimationFrame(() => {
       document.body.setAttribute('data-dsh-appearance-background', 'true');
@@ -185,7 +283,7 @@ app.whenReady().then(async () => {
           color: sidebarStyle.borderRightColor,
         } : null,
       });
-      document.body.removeAttribute('data-ds-dark-theme');
+      if (!originallyDark) document.body.removeAttribute('data-ds-dark-theme');
       document.body.setAttribute('data-dsh-appearance-background', 'false');
     }));
   })`);
@@ -195,6 +293,30 @@ app.whenReady().then(async () => {
   if (!regression.modal || regression.modal.left < 0 || regression.modal.top < 0 || regression.modal.right > regression.viewport.width + 1 || regression.modal.bottom > regression.viewport.height + 1 || regression.modal.scrollHeight > regression.modal.clientHeight + 1) regressionProblems.push(`squeezed modal: ${JSON.stringify(regression.modal)}`);
   if (!regression.layout || regression.layout.rightInset < 20) regressionProblems.push(`cramped right edge: ${JSON.stringify(regression.layout)}`);
   if (!regression.layout || !['auto', 'scroll'].includes(regression.layout.overflowY) || (regression.layout.scrollHeight > regression.layout.clientHeight + 1 && regression.layout.scrollTopAtBottom < 1) || regression.layout.lastContentBottom > regression.layout.viewportBottom + 1) regressionProblems.push(`bottom content unreachable: ${JSON.stringify(regression.layout)}`);
+  if (!regression.layout || regression.layout.scrollbarWidth !== 0) regressionProblems.push(`appearance scrollbar is visible: ${JSON.stringify(regression.layout)}`);
+  const nativeHeading = nativeReference.heading;
+  const appearanceHeading = regression.layout?.heading;
+  const nativeDescription = nativeReference.description;
+  const appearanceDescription = regression.layout?.description;
+  if (!nativeHeading || !appearanceHeading
+    || Math.abs(nativeHeading.top - appearanceHeading.top) > 1
+    || Math.abs(nativeHeading.left - appearanceHeading.left) > 1
+    || nativeHeading.fontSize !== appearanceHeading.fontSize
+    || nativeHeading.lineHeight !== appearanceHeading.lineHeight
+    || nativeHeading.fontWeight !== appearanceHeading.fontWeight) {
+    regressionProblems.push(`appearance heading does not match native page: ${JSON.stringify({ nativeHeading, appearanceHeading })}`);
+  }
+  if (!nativeDescription || !appearanceDescription
+    || Math.abs(nativeDescription.top - appearanceDescription.top) > 1
+    || Math.abs(nativeDescription.left - appearanceDescription.left) > 1
+    || nativeDescription.fontSize !== appearanceDescription.fontSize
+    || nativeDescription.lineHeight !== appearanceDescription.lineHeight) {
+    regressionProblems.push(`appearance description does not match native page: ${JSON.stringify({ nativeDescription, appearanceDescription })}`);
+  }
+  if (targetUrl && (!nativeReference.headerAction || !regression.layout?.headerAction
+    || Math.abs(nativeReference.headerAction.top - regression.layout.headerAction.top) > 1)) {
+    regressionProblems.push(`appearance header action top does not match native page: ${JSON.stringify({ native: nativeReference.headerAction, appearance: regression.layout?.headerAction })}`);
+  }
   if (legacyWallpaperPickerDisplay !== 'absent' && legacyWallpaperPickerDisplay !== 'none') regressionProblems.push(`legacy Wallpaper picker visible: ${legacyWallpaperPickerDisplay}`);
   const nativeDarkTextChannels = nativeThemeRegression.hostColor.match(/\d+/g)?.map(Number) ?? [];
   const nativeDarkTextIsLight = nativeDarkTextChannels.length >= 3
@@ -242,7 +364,7 @@ app.whenReady().then(async () => {
     await new Promise((resolve) => setTimeout(resolve, 250));
     writeFileSync(screenshotPath, (await window.webContents.capturePage()).toPNG());
   }
-  console.log(JSON.stringify({ settings, editor: true }));
+  console.log(JSON.stringify({ settings, editor: true, nativeReference, appearanceLayout: regression.layout }));
   window.destroy();
   app.quit();
 }).catch((error) => { console.error(error); app.exit(1); });
