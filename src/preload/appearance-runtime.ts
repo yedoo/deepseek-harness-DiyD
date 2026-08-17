@@ -91,6 +91,10 @@ function installStyle(registry: AppearanceProviderRegistry): void {
       --dsw-specific-input-major: rgba(20,22,28,var(--dsh-appearance-panel-opacity));
       --dsw-specific-bubble: rgba(20,22,28,calc(var(--dsh-appearance-panel-opacity) * .82));
     }
+    body[data-dsh-appearance-background="true"] [class*="_sidebarCol"],
+    body[data-dsh-appearance-background="true"] .sidebar {
+      border-right-color: transparent !important;
+    }
     body[data-dsh-appearance-background="true"] [data-composer-card],
     body[data-dsh-appearance-background="true"] [class*="_bubble"] {
       backdrop-filter: blur(var(--dsh-appearance-blur)) saturate(1.35);

@@ -32,9 +32,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.4" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.5" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.4", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.5", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {
@@ -163,11 +163,27 @@ app.whenReady().then(async () => {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       document.body.setAttribute('data-dsh-appearance-background', 'true');
       const host = document.querySelector('[data-dsh-appearance-panel]');
+      const sidebar = [...document.querySelectorAll('*')].find((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.left <= 1
+          && rect.width >= 200
+          && rect.width <= 500
+          && rect.height >= innerHeight * .8
+          && style.borderRightStyle !== 'none'
+          && parseFloat(style.borderRightWidth) > 0;
+      });
+      const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
       resolve({
         preserved: document.body.hasAttribute('data-ds-dark-theme'),
         hostColor: host ? getComputedStyle(host).color : '',
         inlineLabelColor: document.body.style.getPropertyValue('--dsw-alias-label-primary'),
         sidebarFill: getComputedStyle(document.body).getPropertyValue('--dsw-specific-sidebar-fill').trim(),
+        sidebarBorder: sidebarStyle ? {
+          width: sidebarStyle.borderRightWidth,
+          style: sidebarStyle.borderRightStyle,
+          color: sidebarStyle.borderRightColor,
+        } : null,
       });
       document.body.removeAttribute('data-ds-dark-theme');
       document.body.setAttribute('data-dsh-appearance-background', 'false');
@@ -185,6 +201,13 @@ app.whenReady().then(async () => {
     && nativeDarkTextChannels.slice(0, 3).every((channel) => channel >= 220);
   if (!nativeThemeRegression.preserved || !nativeDarkTextIsLight || nativeThemeRegression.inlineLabelColor !== '') regressionProblems.push(`native dark theme not inherited: ${JSON.stringify(nativeThemeRegression)}`);
   if (nativeThemeRegression.sidebarFill !== 'transparent') regressionProblems.push(`wallpaper sidebar is not transparent: ${JSON.stringify(nativeThemeRegression)}`);
+  const sidebarBorderChannels = nativeThemeRegression.sidebarBorder?.color.match(/[\d.]+/g)?.map(Number) ?? [];
+  const sidebarBorderTransparent = nativeThemeRegression.sidebarBorder === null
+    || nativeThemeRegression.sidebarBorder.style === 'none'
+    || parseFloat(nativeThemeRegression.sidebarBorder.width) === 0
+    || nativeThemeRegression.sidebarBorder.color === 'transparent'
+    || (sidebarBorderChannels.length === 4 && sidebarBorderChannels[3] === 0);
+  if (!sidebarBorderTransparent) regressionProblems.push(`wallpaper sidebar divider is visible: ${JSON.stringify(nativeThemeRegression.sidebarBorder)}`);
   if (regressionProblems.length) throw new Error(`Appearance regression: ${regressionProblems.join('; ')}`);
   if (settingsScreenshotPath) {
     window.showInactive();
