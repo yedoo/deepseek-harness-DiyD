@@ -6,11 +6,23 @@ import {
   type UpdateStates,
 } from "./preload/update-presentation";
 import { injectPluginMarket } from "./preload/plugin-market-ui";
+import { injectAppearanceSettings } from "./preload/appearance-ui";
+import { AppearanceProviderRegistry } from "./preload/appearance-providers";
+import { installAppearanceRuntime } from "./preload/appearance-runtime";
 import type {
   PluginMarketOperationResult,
   PluginMarketSearchResult,
   PluginMarketSnapshot,
 } from "./plugin-market-types";
+import type {
+  AppearanceAssetPayload,
+  AppearanceAssetSlot,
+  AppearanceConfigPatch,
+  AppearanceProviderUpdate,
+  AppearanceSnapshot,
+  AppearanceThemeInput,
+  AppearanceThemePatch,
+} from "./appearance-types";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -29,6 +41,31 @@ const desktopBridge = {
   retry: (): void => ipcRenderer.send("desktop:retry"),
   selectHarness: (): Promise<boolean> => ipcRenderer.invoke("desktop:select-harness"),
   openLogs: (): Promise<string> => ipcRenderer.invoke("desktop:open-logs"),
+  getAppearance: (): Promise<AppearanceSnapshot> => ipcRenderer.invoke("desktop:get-appearance"),
+  updateAppearance: (patch: AppearanceConfigPatch): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:update-appearance", patch),
+  selectAppearanceAsset: (slot: AppearanceAssetSlot): Promise<{
+    asset: { id: string; slot: AppearanceAssetSlot; mimeType: string };
+    snapshot: AppearanceSnapshot;
+  } | undefined> => ipcRenderer.invoke("desktop:select-appearance-asset", slot),
+  getAppearanceAsset: (assetId: string): Promise<AppearanceAssetPayload> =>
+    ipcRenderer.invoke("desktop:get-appearance-asset", assetId),
+  createAppearanceTheme: (input: AppearanceThemeInput): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:create-appearance-theme", input),
+  duplicateAppearanceTheme: (themeId: string): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:duplicate-appearance-theme", themeId),
+  updateAppearanceTheme: (themeId: string, patch: AppearanceThemePatch): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:update-appearance-theme", themeId, patch),
+  deleteAppearanceTheme: (themeId: string): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:delete-appearance-theme", themeId),
+  applyAppearanceTheme: (themeId: string): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:apply-appearance-theme", themeId),
+  updateAppearanceProvider: (providerId: string, update: AppearanceProviderUpdate): Promise<AppearanceSnapshot> =>
+    ipcRenderer.invoke("desktop:update-appearance-provider", providerId, update),
+  importAppearanceTheme: (): Promise<AppearanceSnapshot | undefined> =>
+    ipcRenderer.invoke("desktop:import-appearance-theme"),
+  exportAppearanceTheme: (themeId: string): Promise<string | undefined> =>
+    ipcRenderer.invoke("desktop:export-appearance-theme", themeId),
   getPluginMarket: (forceRefresh = false): Promise<PluginMarketSnapshot> =>
     ipcRenderer.invoke("desktop:get-plugin-market", forceRefresh),
   searchPlugins: (query: string): Promise<PluginMarketSearchResult> =>
@@ -289,6 +326,14 @@ function injectTitlebar(): void {
       }
       .controls button:hover { background: rgba(24, 24, 27, 0.08); }
       .controls button.close:hover { background: #e81123; color: white; }
+      :host([data-theme="dark"]) { color: #f4f4f5; }
+      :host([data-theme="dark"]) .bar { border-bottom-color: rgba(255,255,255,.09); background: rgba(24,24,27,.88); }
+      :host([data-theme="dark"]) .mark { background: #f4f4f5; color: #18181b; }
+      :host([data-theme="dark"]) .version { color: #a1a1aa; border-color: rgba(161,161,170,.25); }
+      :host([data-theme="dark"]) .update-trigger { color: #d4d4d8; }
+      :host([data-theme="dark"]) .update-trigger:hover,
+      :host([data-theme="dark"]) .update-trigger[aria-expanded="true"] { background: rgba(255,255,255,.09); }
+      :host([data-theme="dark"]) .update-panel { border-color: rgba(255,255,255,.13); background: rgba(32,32,35,.98); color:#f4f4f5; }
       @media (prefers-color-scheme: dark) {
         :host { color: #f4f4f5; }
         .bar {
@@ -561,12 +606,23 @@ function injectTitlebar(): void {
   );
 }
 
+let appearanceInitialized = false;
+function initializeAppearance(): void {
+  if (appearanceInitialized) return;
+  appearanceInitialized = true;
+  const registry = new AppearanceProviderRegistry();
+  const runtime = installAppearanceRuntime(desktopBridge, registry);
+  injectAppearanceSettings(desktopBridge, registry, (snapshot) => void runtime.apply(snapshot));
+}
+
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     injectTitlebar();
     injectPluginMarket(desktopBridge);
+    initializeAppearance();
   }, { once: true });
 } else {
   injectTitlebar();
   injectPluginMarket(desktopBridge);
+  initializeAppearance();
 }
