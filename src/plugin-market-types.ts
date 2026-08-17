@@ -15,6 +15,10 @@ export interface PluginMarketEntry {
   added?: string;
   installed: boolean;
   dependencyName?: string;
+  source: "catalog" | "npm" | "github";
+  reviewStatus: "curated" | "community";
+  version?: string;
+  installScripts?: string[];
 }
 
 export interface PluginMarketSnapshot {
@@ -31,4 +35,12 @@ export interface PluginMarketOperationResult {
   snapshot: PluginMarketSnapshot;
   message: string;
   restartSupported: boolean;
+  plugin?: PluginMarketEntry;
+}
+
+export interface PluginMarketSearchResult {
+  query: string;
+  plugins: PluginMarketEntry[];
+  warnings: string[];
+  searchedAt: string;
 }

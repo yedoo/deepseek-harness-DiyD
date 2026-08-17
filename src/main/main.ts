@@ -668,6 +668,12 @@ function registerDesktopIpc(): void {
     }
     return pluginMarketService.list(forceRefresh === true);
   });
+  ipcMain.handle("desktop:search-plugins", (_event, query: unknown) => {
+    if (!pluginMarketService || typeof query !== "string") {
+      throw new Error("插件搜索请求无效");
+    }
+    return pluginMarketService.search(query);
+  });
   ipcMain.handle("desktop:install-plugin", (_event, pluginId: unknown) => {
     if (!pluginMarketService || typeof pluginId !== "string") {
       throw new Error("插件安装请求无效");

@@ -22,6 +22,8 @@ function plugin(
     stars,
     installCommand: `dsh plugin --profile web add ${name}`,
     installed: false,
+    source: "catalog",
+    reviewStatus: "curated",
   };
 }
 

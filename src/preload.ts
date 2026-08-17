@@ -8,6 +8,7 @@ import {
 import { injectPluginMarket } from "./preload/plugin-market-ui";
 import type {
   PluginMarketOperationResult,
+  PluginMarketSearchResult,
   PluginMarketSnapshot,
 } from "./plugin-market-types";
 
@@ -30,6 +31,8 @@ const desktopBridge = {
   openLogs: (): Promise<string> => ipcRenderer.invoke("desktop:open-logs"),
   getPluginMarket: (forceRefresh = false): Promise<PluginMarketSnapshot> =>
     ipcRenderer.invoke("desktop:get-plugin-market", forceRefresh),
+  searchPlugins: (query: string): Promise<PluginMarketSearchResult> =>
+    ipcRenderer.invoke("desktop:search-plugins", query),
   installPlugin: (pluginId: string): Promise<PluginMarketOperationResult> =>
     ipcRenderer.invoke("desktop:install-plugin", pluginId),
   removePlugin: (pluginId: string): Promise<PluginMarketOperationResult> =>

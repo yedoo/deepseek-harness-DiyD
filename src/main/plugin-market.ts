@@ -12,8 +12,13 @@ import type {
   PluginMarketCategory,
   PluginMarketEntry,
   PluginMarketOperationResult,
+  PluginMarketSearchResult,
   PluginMarketSnapshot,
 } from "../plugin-market-types";
+import {
+  NetworkPluginDiscovery,
+  type PluginDiscoveryProvider,
+} from "./plugin-discovery";
 import { RESULT_PREFIX, type PluginPackageOperationResult } from "./plugin-package-worker";
 
 const DEFAULT_CATALOG_URL = "https://awesome-dsh-plugin.com/plugins.json";
@@ -64,6 +69,7 @@ export interface PluginMarketServiceOptions {
   restartSupported: () => boolean;
   catalogUrl?: string;
   fetchCatalog?: (url: string) => Promise<unknown>;
+  discovery?: PluginDiscoveryProvider;
 }
 
 export interface ProcessPluginPackageInstallerOptions {
@@ -386,20 +392,62 @@ export class PluginMarketService {
   private catalog?: RegistryCatalog;
   private catalogSource: PluginMarketSnapshot["source"] = "fallback";
   private operation?: Promise<PluginMarketOperationResult>;
+  private readonly discovery: PluginDiscoveryProvider;
+  private readonly discovered = new Map<string, PluginMarketEntry>();
 
-  constructor(private readonly options: PluginMarketServiceOptions) {}
+  constructor(private readonly options: PluginMarketServiceOptions) {
+    this.discovery = options.discovery ?? new NetworkPluginDiscovery();
+  }
 
   async list(forceRefresh = false): Promise<PluginMarketSnapshot> {
     const catalog = await this.loadCatalog(forceRefresh);
     return this.snapshot(catalog);
   }
 
+  async search(rawQuery: string): Promise<PluginMarketSearchResult> {
+    const query = rawQuery.trim().slice(0, 100);
+    if (query.length < 2) {
+      return { query, plugins: [], warnings: [], searchedAt: new Date().toISOString() };
+    }
+    const [catalog, result] = await Promise.all([
+      this.loadCatalog(false),
+      this.discovery.search(query),
+    ]);
+    const catalogRepositories = new Set(catalog.plugins.map((plugin) => repositorySlug(plugin.url)));
+    const catalogPackages = new Set(catalog.plugins.flatMap((plugin) => {
+      const spec = parseInstallSpec(plugin.install);
+      const packageName = plugin.npm ?? (spec ? registryPackageName(spec) : undefined);
+      return packageName ? [packageName.toLocaleLowerCase()] : [];
+    }));
+    const profileDirectory = this.profileDirectory();
+    const dependencies = readProfileManifest(profileDirectory).dependencies ?? {};
+    const state = readState(this.options.statePath);
+    const plugins = result.plugins
+      .filter((entry) => {
+        const slug = repositorySlug(entry.url);
+        const spec = parseInstallSpec(entry.installCommand);
+        const packageName = spec ? registryPackageName(spec) : undefined;
+        return !(slug && catalogRepositories.has(slug))
+          && !(packageName && catalogPackages.has(packageName.toLocaleLowerCase()));
+      })
+      .map((entry) => this.withInstallState(entry, dependencies, state));
+    if (this.discovered.size > 200) {
+      this.discovered.clear();
+    }
+    for (const entry of plugins) {
+      this.discovered.set(entry.id, entry);
+    }
+    return { ...result, plugins };
+  }
+
   async install(pluginId: string): Promise<PluginMarketOperationResult> {
     return this.runExclusive(async () => {
       const catalog = await this.loadCatalog(false);
-      const plugin = catalog.plugins.find((entry) => entry.url === pluginId);
+      const discovered = this.discovered.get(pluginId);
+      const plugin = catalog.plugins.find((entry) => entry.url === pluginId)
+        ?? (discovered ? registryPluginFromEntry(discovered) : undefined);
       if (!plugin) {
-        throw new Error("插件不在当前社区目录中");
+        throw new Error("插件不在当前目录或在线搜索结果中，请重新搜索后再试");
       }
       const spec = parseInstallSpec(plugin.install);
       if (!spec) {
@@ -414,40 +462,56 @@ export class PluginMarketService {
         throw new Error("插件已经下载，但未能确认安装的包名");
       }
       const state = readState(this.options.statePath);
-      state.installed[plugin.url] = remembered;
+      const stateKey = discovered?.id ?? plugin.url;
+      state.installed[stateKey] = remembered;
       state.restartRequired = true;
       writeJsonAtomic(this.options.statePath, state);
-      return {
+      const operationResult: PluginMarketOperationResult = {
         snapshot: this.snapshot(catalog),
         message: "安装完成，重启 Harness 后生效",
         restartSupported: this.options.restartSupported(),
       };
+      if (discovered) {
+        const installedEntry = this.withInstallState(discovered, result.dependencies, state);
+        this.discovered.set(discovered.id, installedEntry);
+        operationResult.plugin = installedEntry;
+      }
+      return operationResult;
     });
   }
 
   async remove(pluginId: string): Promise<PluginMarketOperationResult> {
     return this.runExclusive(async () => {
       const catalog = await this.loadCatalog(false);
-      const plugin = catalog.plugins.find((entry) => entry.url === pluginId);
+      const discovered = this.discovered.get(pluginId);
+      const plugin = catalog.plugins.find((entry) => entry.url === pluginId)
+        ?? (discovered ? registryPluginFromEntry(discovered) : undefined);
       if (!plugin) {
-        throw new Error("插件不在当前社区目录中");
+        throw new Error("插件不在当前目录或在线搜索结果中，请重新搜索后再试");
       }
       const profileDirectory = this.profileDirectory();
       const dependencies = readProfileManifest(profileDirectory).dependencies ?? {};
       const state = readState(this.options.statePath);
-      const dependencyName = findInstalledDependency(plugin, dependencies, state.installed[plugin.url]);
+      const stateKey = discovered?.id ?? plugin.url;
+      const dependencyName = findInstalledDependency(plugin, dependencies, state.installed[stateKey]);
       if (!dependencyName) {
         throw new Error("没有找到这个插件的已安装依赖");
       }
       await this.options.packageInstaller.run("remove", profileDirectory, dependencyName);
-      delete state.installed[plugin.url];
+      delete state.installed[stateKey];
       state.restartRequired = true;
       writeJsonAtomic(this.options.statePath, state);
-      return {
+      const operationResult: PluginMarketOperationResult = {
         snapshot: this.snapshot(catalog),
         message: "卸载完成，重启 Harness 后生效",
         restartSupported: this.options.restartSupported(),
       };
+      if (discovered) {
+        const removedEntry = this.withInstallState(discovered, {}, state);
+        this.discovered.set(discovered.id, removedEntry);
+        operationResult.plugin = removedEntry;
+      }
+      return operationResult;
     });
   }
 
@@ -540,6 +604,8 @@ export class PluginMarketService {
           ...(plugin.added ? { added: plugin.added } : {}),
           installed: dependencyName !== undefined,
           ...(dependencyName ? { dependencyName } : {}),
+          source: "catalog",
+          reviewStatus: "curated",
         };
       });
     return {
@@ -552,4 +618,34 @@ export class PluginMarketService {
       restartSupported: this.options.restartSupported(),
     };
   }
+
+  private withInstallState(
+    entry: PluginMarketEntry,
+    dependencies: Record<string, string>,
+    state: PluginMarketState,
+  ): PluginMarketEntry {
+    const plugin = registryPluginFromEntry(entry);
+    const dependencyName = findInstalledDependency(plugin, dependencies, state.installed[entry.id]);
+    const { dependencyName: _previousDependencyName, ...base } = entry;
+    return {
+      ...base,
+      installed: dependencyName !== undefined,
+      ...(dependencyName ? { dependencyName } : {}),
+    };
+  }
+}
+
+function registryPluginFromEntry(entry: PluginMarketEntry): RegistryPlugin {
+  const spec = parseInstallSpec(entry.installCommand);
+  return {
+    name: entry.name,
+    owner: entry.owner,
+    url: entry.url,
+    category: entry.category,
+    description: { zh: entry.description },
+    npm: entry.source === "npm" && spec ? registryPackageName(spec) ?? null : null,
+    stars: entry.stars,
+    install: entry.installCommand,
+    ...(entry.added ? { added: entry.added } : {}),
+  };
 }
