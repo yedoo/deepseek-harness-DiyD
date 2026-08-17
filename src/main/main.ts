@@ -35,6 +35,10 @@ import {
   ArboristHarnessPackageInstaller,
 } from "./harness-runtime-installer";
 import { classifyNavigation } from "./navigation";
+import {
+  PluginMarketService,
+  ProcessPluginPackageInstaller,
+} from "./plugin-market";
 import { RunningHarnessLocator } from "./running-harness-locator";
 import { chooseStartupStrategy } from "./startup-strategy";
 import {
@@ -61,6 +65,7 @@ let desktopUpdater: DesktopUpdater | undefined;
 let harnessUpdater: HarnessUpdater | undefined;
 let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
 let harnessUpdateCoordinator: HarnessUpdateCoordinator | undefined;
+let pluginMarketService: PluginMarketService | undefined;
 let activeHarnessInstallation: HarnessInstallation | undefined;
 let harnessUpdateUnsubscribe: (() => void) | undefined;
 let desktopInitialCheckTimer: NodeJS.Timeout | undefined;
@@ -133,6 +138,21 @@ void app.whenReady().then(async () => {
     ),
     verifyHarnessRuntime,
   );
+  const pluginMarketRoot = path.join(userDataRoot, "plugin-market");
+  pluginMarketService = new PluginMarketService({
+    dataRoot: () => resolveHarnessDataRoot(activeHarnessInstallation ?? tryResolveHarnessInstallation()),
+    cacheDirectory: pluginMarketRoot,
+    statePath: path.join(pluginMarketRoot, "state.json"),
+    catalogCachePath: path.join(pluginMarketRoot, "catalog.json"),
+    packageInstaller: new ProcessPluginPackageInstaller({
+      nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+      workerPath: path.join(__dirname, "plugin-package-worker.js"),
+      logsRoot: path.join(userDataRoot, "logs"),
+      cachePath: path.join(userDataRoot, "npm-cache"),
+      runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+    }),
+    restartSupported: () => harnessService !== undefined,
+  });
   registerDesktopIpc();
   mainWindow = createMainWindow();
   initializeDesktopUpdater();
@@ -641,6 +661,54 @@ function registerDesktopIpc(): void {
     const logsRoot = path.join(app.getPath("userData"), "logs");
     mkdirSync(logsRoot, { recursive: true });
     return shell.openPath(logsRoot);
+  });
+  ipcMain.handle("desktop:get-plugin-market", (_event, forceRefresh: unknown) => {
+    if (!pluginMarketService) {
+      throw new Error("插件市场尚未初始化");
+    }
+    return pluginMarketService.list(forceRefresh === true);
+  });
+  ipcMain.handle("desktop:install-plugin", (_event, pluginId: unknown) => {
+    if (!pluginMarketService || typeof pluginId !== "string") {
+      throw new Error("插件安装请求无效");
+    }
+    return pluginMarketService.install(pluginId);
+  });
+  ipcMain.handle("desktop:remove-plugin", (_event, pluginId: unknown) => {
+    if (!pluginMarketService || typeof pluginId !== "string") {
+      throw new Error("插件卸载请求无效");
+    }
+    return pluginMarketService.remove(pluginId);
+  });
+  ipcMain.handle("desktop:restart-harness-for-plugins", async () => {
+    const service = harnessService;
+    if (!service || !pluginMarketService) {
+      return false;
+    }
+    await service.stop();
+    harnessService = undefined;
+    await startHarness();
+    if (!harnessOrigin) {
+      return false;
+    }
+    pluginMarketService.acknowledgeRestart();
+    return true;
+  });
+  ipcMain.handle("desktop:open-plugin-source", async (_event, sourceUrl: unknown) => {
+    if (typeof sourceUrl !== "string") {
+      return false;
+    }
+    let url: URL;
+    try {
+      url = new URL(sourceUrl);
+    } catch {
+      return false;
+    }
+    if (url.protocol !== "https:" || url.hostname.toLocaleLowerCase() !== "github.com") {
+      return false;
+    }
+    await shell.openExternal(url.toString());
+    return true;
   });
   ipcMain.handle("desktop:get-update-states", () => getUpdateStates());
   ipcMain.handle("desktop:check-client-update", async () => {
