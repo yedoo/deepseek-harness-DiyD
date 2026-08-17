@@ -103,9 +103,9 @@ function findSettingsShell(): SettingsShell | undefined {
         nav,
         content,
         referenceButton: general,
-        openConfigButton: findButton(content, ["打开配置文件", "Open config file"]),
-        closeButton: content.querySelector<HTMLButtonElement>('button[aria-label="关闭"],button[aria-label="Close"]')
-          ?? findButton(content, ["关闭", "Close"]),
+        openConfigButton: findButton(dialog, ["打开配置文件", "Open config file"]),
+        closeButton: dialog.querySelector<HTMLButtonElement>('button[aria-label="关闭"],button[aria-label="Close"]')
+          ?? findButton(dialog, ["关闭", "Close"]),
       };
     }
   }
@@ -174,8 +174,48 @@ function installAppearanceSection(
     .filter((button) => button !== navButton);
   const nativeChildren = (): HTMLElement[] => Array.from(shell.content.children)
     .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== host);
+  const syncNativePageMetrics = (): void => {
+    const heading = nativeChildren()
+      .flatMap((child) => [
+        ...(child.matches("h1,h2,h3") ? [child] : []),
+        ...Array.from(child.querySelectorAll<HTMLElement>("h1,h2,h3")),
+      ])
+      .find((candidate) => {
+        const text = exactText(candidate);
+        return text
+          && !["设置", "Settings"].includes(text)
+          && candidate.getClientRects().length > 0;
+      });
+    if (!heading) return;
+    const parentRect = shell.content.getBoundingClientRect();
+    const parentStyle = getComputedStyle(shell.content);
+    const headingRect = heading.getBoundingClientRect();
+    const contentTop = parentRect.top + shell.content.clientTop + (Number.parseFloat(parentStyle.paddingTop) || 0);
+    const contentLeft = parentRect.left + shell.content.clientLeft + (Number.parseFloat(parentStyle.paddingLeft) || 0);
+    const headingStyle = getComputedStyle(heading);
+    const description = heading.nextElementSibling instanceof HTMLParagraphElement
+      ? heading.nextElementSibling
+      : undefined;
+    const descriptionStyle = description ? getComputedStyle(description) : undefined;
+    const descriptionRect = description?.getBoundingClientRect();
+    const openConfigRect = shell.openConfigButton?.getBoundingClientRect();
+    host.style.setProperty("--dsh-native-page-inset-top", `${Math.max(0, headingRect.top - contentTop)}px`);
+    host.style.setProperty("--dsh-native-page-inset-left", `${Math.max(0, headingRect.left - contentLeft)}px`);
+    host.style.setProperty("--dsh-native-page-title-size", headingStyle.fontSize);
+    host.style.setProperty("--dsh-native-page-title-line-height", headingStyle.lineHeight);
+    host.style.setProperty("--dsh-native-page-title-weight", headingStyle.fontWeight);
+    if (openConfigRect && openConfigRect.width > 0 && openConfigRect.top >= contentTop) {
+      host.style.setProperty("--dsh-native-header-action-top", `${Math.max(0, openConfigRect.top - contentTop)}px`);
+    }
+    if (descriptionStyle && descriptionRect) {
+      host.style.setProperty("--dsh-native-page-description-size", descriptionStyle.fontSize);
+      host.style.setProperty("--dsh-native-page-description-line-height", descriptionStyle.lineHeight);
+      host.style.setProperty("--dsh-native-page-description-gap", `${Math.max(0, descriptionRect.top - headingRect.bottom)}px`);
+    }
+  };
   const activate = (): void => {
     if (active) return;
+    syncNativePageMetrics();
     active = true;
     nativeChildren().forEach((child) => {
       child.dataset.dshAppearancePreviousDisplay = child.style.display;
@@ -688,8 +728,8 @@ function appearanceStyles(): string {
   return `
     :host { display:block; height:100%; min-height:0; color:var(--dsw-alias-label-primary,#18181b); font:14px/1.45 "Segoe UI Variable","Segoe UI","Microsoft YaHei UI",sans-serif; }
     :host([hidden]) { display:none !important; } *,*::before,*::after { box-sizing:border-box; } button,input,select { font:inherit; color:inherit; }
-    .panel-root { height:100%; min-height:0; overflow:hidden; } .shell { height:100%; min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-gutter:stable; padding:0 24px 40px 0; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
-    h2,h3,p { margin:0; } h2 { font-size:22px; } header p,.block-title p,.toolbar p,.editor-section>p { margin-top:6px; color:var(--dsw-alias-label-secondary,#8a8a93); }
+    .panel-root { height:100%; min-height:0; overflow:hidden; } .shell { position:relative; height:100%; min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; padding:var(--dsh-native-page-inset-top,54px) 24px 40px var(--dsh-native-page-inset-left,24px); } .shell::-webkit-scrollbar { display:none; width:0; height:0; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { position:absolute; top:calc(var(--dsh-native-header-action-top,24px) - 4px); right:24px; display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
+    h2,h3,p { margin:0; } h2 { font-size:var(--dsh-native-page-title-size,16px); line-height:var(--dsh-native-page-title-line-height,24px); font-weight:var(--dsh-native-page-title-weight,500); } header p { margin-top:var(--dsh-native-page-description-gap,12px); font-size:var(--dsh-native-page-description-size,14px); line-height:var(--dsh-native-page-description-line-height,22px); } header p,.block-title p,.toolbar p,.editor-section>p { color:var(--dsw-alias-label-secondary,#8a8a93); } .block-title p,.toolbar p,.editor-section>p { margin-top:6px; }
     .tabs { display:flex; gap:28px; height:49px; margin-top:12px; border-bottom:1px solid #e5e5e8; } .tabs button { position:relative; border:0; background:transparent; color:#777780; cursor:pointer; }
     .tabs button[aria-selected=true] { color:#18181b; font-weight:600; } .tabs button[aria-selected=true]::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#18181b; }
     .page { padding-top:18px; } .block { padding:18px 0; border-bottom:1px solid #ececef; } .block.first-block { padding-top:0; } .block-title,.toolbar,.editor-head,.provider-line,.section-heading,.danger-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
