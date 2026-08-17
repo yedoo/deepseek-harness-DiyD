@@ -15,6 +15,7 @@ import {
   PluginMarketService,
   type PluginPackageInstaller,
 } from "../src/main/plugin-market";
+import type { PluginDiscoveryProvider } from "../src/main/plugin-discovery";
 import { reconcileProfileBundles } from "../src/main/plugin-package-worker";
 
 const temporaryDirectories: string[] = [];
@@ -165,5 +166,66 @@ describe("PluginMarketService", () => {
 
     const removed = await service.remove("https://github.com/liustack/modlens");
     expect(removed.snapshot.plugins.find((entry) => entry.name === "modlens")?.installed).toBe(false);
+  });
+
+  it("installs a server-verified online result and rejects a forged id", async () => {
+    const root = temporaryRoot();
+    const dataRoot = path.join(root, "data");
+    const profile = writeProfile(dataRoot);
+    const onlinePlugin = {
+      id: "npm:dsh-plugin-wallpaper-engine",
+      name: "dsh-plugin-wallpaper-engine",
+      owner: "elysia395",
+      url: "https://github.com/elysia395/dsh-wallpaper-engine",
+      category: "theme",
+      description: "Wallpaper Engine backgrounds",
+      stars: 18,
+      installCommand: "dsh plugin --profile web add dsh-plugin-wallpaper-engine",
+      installed: false,
+      source: "npm" as const,
+      reviewStatus: "community" as const,
+      version: "0.1.3",
+    };
+    const discovery: PluginDiscoveryProvider = {
+      search: async (query) => ({
+        query,
+        plugins: [onlinePlugin],
+        warnings: [],
+        searchedAt: "2026-08-17T00:00:00.000Z",
+      }),
+    };
+    const installer: PluginPackageInstaller = {
+      run: async (operation, _profile, target) => {
+        const manifestPath = path.join(profile, "package.json");
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+        if (operation === "add") {
+          manifest.dependencies["dsh-plugin-wallpaper-engine"] = target;
+        } else {
+          delete manifest.dependencies[target];
+        }
+        writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        return { dependencies: manifest.dependencies, bundles: manifest.dsh.profile.bundles };
+      },
+    };
+    const service = new PluginMarketService({
+      dataRoot: () => dataRoot,
+      cacheDirectory: path.join(root, "market"),
+      statePath: path.join(root, "market", "state.json"),
+      catalogCachePath: path.join(root, "market", "catalog.json"),
+      packageInstaller: installer,
+      restartSupported: () => true,
+      fetchCatalog: async () => catalog(),
+      discovery,
+    });
+
+    await expect(service.install(onlinePlugin.id)).rejects.toThrow("重新搜索");
+    const search = await service.search("wallpaper");
+    expect(search.plugins[0]?.reviewStatus).toBe("community");
+    const installed = await service.install(onlinePlugin.id);
+    expect(installed.plugin?.installed).toBe(true);
+    expect(installed.plugin?.dependencyName).toBe("dsh-plugin-wallpaper-engine");
+    const removed = await service.remove(onlinePlugin.id);
+    expect(removed.plugin?.installed).toBe(false);
+    expect(removed.plugin?.dependencyName).toBeUndefined();
   });
 });

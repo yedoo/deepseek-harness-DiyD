@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 
 const targetUrl = process.env.DSH_MARKET_TEST_URL || "http://127.0.0.1:43127";
 const screenshotPath = process.env.DSH_MARKET_SCREENSHOT;
+const resultScreenshotPath = process.env.DSH_MARKET_RESULT_SCREENSHOT;
 const useFixture = process.env.DSH_MARKET_FIXTURE === "1";
 
 let snapshot = {
@@ -25,6 +26,8 @@ let snapshot = {
       stars: 1714,
       installCommand: "dsh plugin --profile web add dsh-better-sidebar",
       installed: false,
+      source: "catalog",
+      reviewStatus: "curated",
     },
     {
       id: "https://github.com/liustack/modlens",
@@ -36,6 +39,8 @@ let snapshot = {
       stars: 2478,
       installCommand: "dsh plugin --profile web add @liustack/modlens",
       installed: false,
+      source: "catalog",
+      reviewStatus: "curated",
     },
     {
       id: "https://github.com/omdsh-dev/dsh-at-file",
@@ -48,6 +53,8 @@ let snapshot = {
       installCommand: "dsh plugin --profile web add github:omdsh-dev/dsh-at-file",
       installed: true,
       dependencyName: "dsh-at-file",
+      source: "catalog",
+      reviewStatus: "curated",
     },
     {
       id: "https://github.com/bowenliang123/dsh-context",
@@ -59,6 +66,8 @@ let snapshot = {
       stars: 112,
       installCommand: "dsh plugin --profile web add github:bowenliang123/dsh-context",
       installed: false,
+      source: "catalog",
+      reviewStatus: "curated",
     },
   ],
   installedCount: 1,
@@ -66,14 +75,45 @@ let snapshot = {
   restartSupported: true,
 };
 
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.5.0" }));
+const wallpaperPlugin = {
+  id: "npm:dsh-plugin-wallpaper-engine",
+  name: "dsh-plugin-wallpaper-engine",
+  owner: "elysia395",
+  url: "https://github.com/elysia395/dsh-wallpaper-engine",
+  category: "theme",
+  description: "将 Wallpaper Engine 视频与网页壁纸接入 DSH",
+  stars: 18,
+  installCommand: "dsh plugin --profile web add dsh-plugin-wallpaper-engine",
+  installed: false,
+  source: "npm",
+  reviewStatus: "community",
+  version: "0.1.3",
+  installScripts: ["prepare"],
+};
+
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.0" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
 ipcMain.handle("desktop:get-update-states", () => ({
-  desktop: { phase: "up-to-date", currentVersion: "0.5.0", supported: true },
+  desktop: { phase: "up-to-date", currentVersion: "0.6.0", supported: true },
   harness: { phase: "up-to-date", currentVersion: "0.1.0-rc.6", supported: true },
 }));
 ipcMain.handle("desktop:get-plugin-market", () => snapshot);
+ipcMain.handle("desktop:search-plugins", (_event, query) => ({
+  query,
+  plugins: String(query).toLowerCase().includes("wallpaper") ? [wallpaperPlugin] : [],
+  warnings: [],
+  searchedAt: new Date().toISOString(),
+}));
 ipcMain.handle("desktop:install-plugin", (_event, id) => {
+  if (id === wallpaperPlugin.id) {
+    snapshot = { ...snapshot, restartRequired: true, installedCount: snapshot.installedCount + 1 };
+    return {
+      snapshot,
+      plugin: { ...wallpaperPlugin, installed: true, dependencyName: wallpaperPlugin.name },
+      message: "安装完成，重启 Harness 后生效",
+      restartSupported: true,
+    };
+  }
   snapshot = {
     ...snapshot,
     restartRequired: true,
@@ -120,6 +160,7 @@ app.whenReady().then(async () => {
     show: false,
     frame: false,
     webPreferences: {
+      backgroundThrottling: false,
       preload: path.join(__dirname, "..", "dist", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
@@ -158,7 +199,7 @@ app.whenReady().then(async () => {
     writeFileSync(screenshotPath, image.toPNG());
   }
 
-  const interaction = await window.webContents.executeJavaScript(`(async () => {
+  const searchInteraction = await window.webContents.executeJavaScript(`(async () => {
     const panel = document.querySelector('[data-dsh-desktop-market-panel]');
     const root = panel.shadowRoot;
     const search = root.querySelector('.search');
@@ -169,18 +210,47 @@ app.whenReady().then(async () => {
     search.value = '';
     search.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 20));
+    search.value = 'dsh-plugin-wallpaper-engine';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    const onlineDeadline = Date.now() + 3000;
+    while (Date.now() < onlineDeadline && !root.querySelector('[data-review="community"]')) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const onlineSearchCount = root.querySelectorAll('.card').length;
+    const onlineReview = root.querySelector('[data-review="community"]')?.textContent ?? '';
+    return { filteredCount, onlineSearchCount, onlineReview };
+  })()`);
+
+  if (resultScreenshotPath) {
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const resultImage = await window.webContents.capturePage();
+    writeFileSync(resultScreenshotPath, resultImage.toPNG());
+  }
+
+  const installInteraction = await window.webContents.executeJavaScript(`(async () => {
+    const root = document.querySelector('[data-dsh-desktop-market-panel]').shadowRoot;
     const install = [...root.querySelectorAll('button')].find(el => el.textContent === '安装');
     install.click();
     const confirmationVisible = root.querySelector('[role="dialog"]') !== null;
     [...root.querySelectorAll('button')].find(el => el.textContent === '确认安装').click();
     const deadline = Date.now() + 2000;
-    while (Date.now() < deadline && root.querySelectorAll('.installed').length < 2) {
+    while (Date.now() < deadline && root.querySelectorAll('.installed').length < 1) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     return {
-      filteredCount,
       confirmationVisible,
       installedCount: root.querySelectorAll('.installed').length,
+      notice: root.querySelector('.notice')?.textContent ?? '',
+    };
+  })()`);
+
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const postInteraction = await window.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('[data-dsh-desktop-market-panel]').shadowRoot;
+    return {
+      cards: root.querySelectorAll('.card').length,
+      installed: root.querySelectorAll('.installed').length,
+      empty: root.querySelector('.empty')?.textContent ?? '',
       notice: root.querySelector('.notice')?.textContent ?? '',
     };
   })()`);
@@ -188,12 +258,18 @@ app.whenReady().then(async () => {
   const result = {
     marketTab: true,
     initialCards: 4,
-    ...interaction,
+    ...searchInteraction,
+    ...installInteraction,
+    postInteraction,
   };
   console.log(JSON.stringify(result));
   const passed = result.filteredCount === 1
     && result.confirmationVisible === true
-    && result.installedCount === 2
+    && result.onlineSearchCount === 1
+    && result.onlineReview.includes("未审核")
+    && result.installedCount === 1
+    && result.postInteraction.cards === 1
+    && result.postInteraction.installed === 1
     && result.notice.includes("重启 Harness 后生效");
   window.destroy();
   app.exit(passed ? 0 : 1);

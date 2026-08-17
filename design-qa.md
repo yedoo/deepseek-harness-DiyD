@@ -7,6 +7,7 @@ final result: passed
 - source: `C:\Users\TianYe\.codex\generated_images\01a00880-43f8-75b0-8fcd-1be281045c1a\exec-0eedaee0-73cf-40a3-8ada-3431dc0366cc.png`
 - source dimensions: 1562 × 1007
 - implementation: `D:\DeepSeek\deepseek-harness-desktop\.tmp-market-qa.png`
+- online-search implementation: `D:\DeepSeek\deepseek-harness-desktop\.tmp-market-online-qa.png`
 - implementation dimensions: 2192 × 1413 (Windows DPI-scaled capture; same 1.551 aspect ratio)
 - implementation route/state: Electron `BrowserWindow`, Settings → Plugins → Plugin Market, bundled visual fixture with one installed plugin
 - comparison method: source and implementation were rendered together in one full-frame comparison; the modal fills most of both frames and card text remains legible, so a separate crop was not required
@@ -26,6 +27,13 @@ final result: passed
 - Made restart availability part of the market snapshot so restored notices reflect the actual Harness connection mode.
 - Re-ran the same-state comparison and interaction smoke test.
 
+### Iteration 3 — open discovery
+
+- Preserved the approved workbench, settings modal, navigation, density, and monochrome visual language.
+- Extended the existing search field instead of adding another market page: curated results are filtered immediately, while npm and GitHub discovery runs after a short debounce.
+- Added compact provenance badges (`已审核`, `npm · 未审核`, `GitHub · 未审核`) and version metadata without changing card height.
+- Verified the online-result state with `dsh-plugin-wallpaper-engine`; the result remains readable and the unreviewed status is visible before installation.
+
 ## Final severity assessment
 
 - P0 blockers: none
@@ -35,7 +43,7 @@ final result: passed
   - The existing Harness tab label remains `插件列表` instead of replacing it with an installed-count label; this preserves the host UI outside the new market tab.
   - Repository avatars use live GitHub identicons instead of invented logos; failed images collapse cleanly.
   - A small `刷新目录` action and an uninstall action are present because they are required for a functioning independent market.
-  - The title bar shows v0.5.0, the release containing this feature.
+  - The title bar shows v0.6.0, the release containing open npm/GitHub discovery.
 
 ## Interaction verification
 
@@ -44,4 +52,6 @@ final result: passed
 - Install opens an explicit confirmation dialog showing the command and permission warning.
 - Confirmed installation updates installed state and exposes the Harness restart action.
 - Catalog source validation rejects non-GitHub repositories and unsafe install commands.
+- Online discovery rejects packages without an explicit DSH bundle/client declaration and excludes internal runtime packages.
+- The renderer can install only server-verified result IDs; direct npm package names and GitHub URLs are resolved by the main process before confirmation.
 - All automated tests, TypeScript checks, Electron market smoke checks, and title-bar smoke checks passed.

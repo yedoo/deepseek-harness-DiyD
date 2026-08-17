@@ -1,6 +1,7 @@
 import type {
   PluginMarketEntry,
   PluginMarketOperationResult,
+  PluginMarketSearchResult,
   PluginMarketSnapshot,
 } from "../plugin-market-types";
 import {
@@ -14,6 +15,7 @@ import {
 
 export interface PluginMarketDesktopApi {
   getPluginMarket(forceRefresh?: boolean): Promise<PluginMarketSnapshot>;
+  searchPlugins(query: string): Promise<PluginMarketSearchResult>;
   installPlugin(pluginId: string): Promise<PluginMarketOperationResult>;
   removePlugin(pluginId: string): Promise<PluginMarketOperationResult>;
   restartHarnessForPlugins(): Promise<boolean>;
@@ -32,6 +34,9 @@ interface ViewState {
   category: PluginMarketCategoryId;
   sort: PluginMarketSort;
   loading: boolean;
+  onlinePlugins: PluginMarketEntry[];
+  onlineLoading: boolean;
+  onlineWarnings: string[];
   busyPluginId?: string;
   confirming?: { plugin: PluginMarketEntry; operation: "install" | "remove" };
   notice?: { tone: "success" | "error" | "info"; message: string; restartSupported?: boolean };
@@ -223,7 +228,10 @@ function marketplaceStyles(): string {
     }
     .author { overflow: hidden; color: #7b7b84; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .description { margin: 4px 0 7px; overflow: hidden; color: #666671; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .badges { display: flex; align-items: center; gap: 5px; }
     .badge { display: inline-flex; padding: 2px 7px; border-radius: 6px; color: #71717a; background: #f1f1f3; font-size: 10px; }
+    .badge[data-review="curated"] { color: #287347; background: #edf8f1; }
+    .badge[data-review="community"] { color: #9a6815; background: #fff6e5; }
     .actions { display: flex; align-items: center; gap: 8px; }
     .install, .remove {
       min-width: 62px;
@@ -247,6 +255,7 @@ function marketplaceStyles(): string {
       color: #8b8b94;
       background: #fbfbfc;
     }
+    .onlineProgress { padding: 8px 4px; color: #777780; font-size: 11px; text-align: center; }
     .footer { margin-top: 12px; color: #9999a1; font-size: 11px; }
     .overlay {
       position: fixed;
@@ -289,6 +298,8 @@ function marketplaceStyles(): string {
       .avatar { border-color: #45454b; background: #333338; }
       .title { color: #f4f4f5; }
       .badge, .remove, .command { color: #c0c0c5; background: #39393e; }
+      .badge[data-review="curated"] { color: #8bd6aa; background: #263b30; }
+      .badge[data-review="community"] { color: #e7bb67; background: #45371f; }
       .install { color: #8db3ff; background: transparent; }
       .empty, .loading { border-color: #45454b; color: #a1a1aa; background: #242427; }
       .dialog p { color: #c0c0c5; }
@@ -314,17 +325,23 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
     category: "featured",
     sort: "popular",
     loading: false,
+    onlinePlugins: [],
+    onlineLoading: false,
+    onlineWarnings: [],
   };
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchSequence = 0;
 
   const render = (): void => {
     root.replaceChildren();
     const search = createElement("input", "search");
     search.type = "search";
-    search.placeholder = "搜索插件、作者或功能";
+    search.placeholder = "搜索插件、npm 包名或 GitHub 地址";
     search.value = state.query;
-    search.setAttribute("aria-label", "搜索插件、作者或功能");
+    search.setAttribute("aria-label", "搜索插件、npm 包名或 GitHub 地址");
     search.addEventListener("input", () => {
       state.query = search.value;
+      scheduleOnlineSearch();
       renderList();
     });
     root.append(search);
@@ -361,7 +378,7 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
     const meta = createElement("div", "meta");
     const metaText = createElement("span");
     const sourceNote = state.snapshot?.source === "fallback" ? " · 离线精选" : "";
-    metaText.textContent = `社区精选 · 兼容当前版本${sourceNote}`;
+    metaText.textContent = `社区精选 + npm / GitHub 在线发现${sourceNote}`;
     meta.append(metaText);
     const refresh = button("刷新目录", "");
     refresh.disabled = state.loading;
@@ -402,7 +419,7 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
     renderList();
 
     const footer = createElement("div", "footer");
-    footer.textContent = "插件由社区维护 · 安装前请查看权限";
+    footer.textContent = "已审核条目优先 · 在线发现结果安装前请确认来源与权限";
     root.append(footer);
 
     if (state.confirming) {
@@ -428,20 +445,38 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
       list.append(empty);
       return;
     }
+    const combined = state.query.trim()
+      ? [...state.snapshot.plugins, ...state.onlinePlugins]
+      : state.snapshot.plugins;
     const plugins = filterPluginMarketEntries(
-      state.snapshot.plugins,
+      combined,
       state.query,
       state.category,
       state.sort,
     );
     if (plugins.length === 0) {
       const empty = createElement("div", "empty");
-      empty.textContent = state.query ? "没有找到匹配的插件" : "这个分类暂时没有插件";
+      empty.textContent = state.query
+        ? state.onlineLoading
+          ? "正在搜索精选目录、npm 与 GitHub…"
+          : state.onlineWarnings.length > 0
+            ? `没有找到兼容插件 · ${state.onlineWarnings.join(" · ")}`
+            : "没有找到兼容的 DSH 插件"
+        : "这个分类暂时没有插件";
       list.append(empty);
       return;
     }
     for (const plugin of plugins) {
       list.append(createPluginCard(plugin));
+    }
+    if (state.onlineLoading) {
+      const progress = createElement("div", "onlineProgress");
+      progress.textContent = "正在继续搜索 npm 与 GitHub…";
+      list.append(progress);
+    } else if (state.onlineWarnings.length > 0) {
+      const warning = createElement("div", "onlineProgress");
+      warning.textContent = state.onlineWarnings.join(" · ");
+      list.append(warning);
     }
   };
 
@@ -467,14 +502,28 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
     title.title = `打开 ${displayName} 源码`;
     title.addEventListener("click", () => void api.openPluginSource(plugin.url));
     const author = createElement("span", "author");
-    author.textContent = `${plugin.owner} · ★ ${formatPluginStars(plugin.stars)}`;
+    author.textContent = [
+      plugin.owner,
+      plugin.version ? `v${plugin.version}` : undefined,
+      plugin.stars > 0 ? `★ ${formatPluginStars(plugin.stars)}` : undefined,
+    ].filter(Boolean).join(" · ");
     titleRow.append(title, author);
     const description = createElement("div", "description");
     description.textContent = plugin.description;
     description.title = plugin.description;
-    const badge = createElement("span", "badge");
-    badge.textContent = categoryLabel(plugin);
-    content.append(titleRow, description, badge);
+    const badges = createElement("div", "badges");
+    const category = createElement("span", "badge");
+    category.textContent = categoryLabel(plugin);
+    const review = createElement("span", "badge");
+    review.dataset.review = plugin.reviewStatus;
+    review.textContent = plugin.reviewStatus === "curated"
+      ? "已审核"
+      : `${plugin.source === "npm" ? "npm" : "GitHub"} · 未审核`;
+    review.title = plugin.reviewStatus === "curated"
+      ? "来自社区精选目录"
+      : "已验证 DSH 插件声明，但尚未经过市场人工审核";
+    badges.append(category, review);
+    content.append(titleRow, description, badges);
     card.append(content);
 
     const actions = createElement("div", "actions");
@@ -528,7 +577,9 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
       : `移除 ${plugin.dependencyName ?? plugin.name}`;
     const warning = createElement("p", "warning");
     warning.textContent = operation === "install"
-      ? "社区插件将以当前用户权限运行。请只安装你信任的来源。"
+      ? plugin.reviewStatus === "curated"
+        ? "该插件来自精选目录，仍将以当前用户权限运行。请确认你信任此来源。"
+        : `该插件由${plugin.source === "npm" ? " npm" : " GitHub"} 在线发现，已验证 DSH 声明但未经市场人工审核。${plugin.installScripts?.length ? ` 声明了生命周期脚本：${plugin.installScripts.join("、")}。` : ""}`
       : "插件配置将保留在 Harness 数据目录中，重新安装后可继续使用。";
     const actions = createElement("div", "dialogActions");
     const cancel = button("取消", "cancel");
@@ -562,6 +613,10 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
         ? await api.installPlugin(plugin.id)
         : await api.removePlugin(plugin.id);
       state.snapshot = result.snapshot;
+      if (result.plugin) {
+        state.onlinePlugins = state.onlinePlugins.map((entry) =>
+          entry.id === result.plugin?.id ? result.plugin : entry);
+      }
       state.notice = {
         tone: "success",
         message: result.message,
@@ -596,6 +651,9 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
             restartSupported: state.snapshot.restartSupported,
           }
         : undefined;
+      if (state.query.trim()) {
+        scheduleOnlineSearch();
+      }
     } catch (error) {
       state.notice = {
         tone: "error",
@@ -605,6 +663,46 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
       state.loading = false;
       render();
     }
+  };
+
+  const searchOnline = async (query: string, sequence: number): Promise<void> => {
+    state.onlineLoading = true;
+    state.onlineWarnings = [];
+    renderList();
+    try {
+      const result = await api.searchPlugins(query);
+      if (sequence !== searchSequence || query !== state.query.trim()) {
+        return;
+      }
+      state.onlinePlugins = result.plugins;
+      state.onlineWarnings = result.warnings;
+    } catch (error) {
+      if (sequence !== searchSequence) {
+        return;
+      }
+      state.onlinePlugins = [];
+      state.onlineWarnings = [error instanceof Error ? error.message : String(error)];
+    } finally {
+      if (sequence === searchSequence) {
+        state.onlineLoading = false;
+        renderList();
+      }
+    }
+  };
+
+  const scheduleOnlineSearch = (): void => {
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+    const sequence = ++searchSequence;
+    const query = state.query.trim();
+    state.onlinePlugins = [];
+    state.onlineWarnings = [];
+    state.onlineLoading = false;
+    if (query.length < 2) {
+      return;
+    }
+    searchTimer = setTimeout(() => void searchOnline(query, sequence), 500);
   };
 
   host.addEventListener("dsh-market-activate", () => {
