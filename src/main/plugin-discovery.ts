@@ -25,8 +25,10 @@ export interface PluginDiscoveryProvider {
   search(query: string): Promise<PluginMarketSearchResult>;
 }
 
-interface ManifestInspection {
+export interface ManifestInspection {
   compatible: boolean;
+  hasBundle: boolean;
+  hasClient: boolean;
   installScripts: string[];
 }
 
@@ -67,7 +69,7 @@ function lifecycleScripts(manifest: Record<string, unknown>): string[] {
 
 export function inspectDshPluginManifest(value: unknown): ManifestInspection {
   if (!isRecord(value) || !isRecord(value.dsh)) {
-    return { compatible: false, installScripts: [] };
+    return { compatible: false, hasBundle: false, hasClient: false, installScripts: [] };
   }
   const bundle = isRecord(value.dsh.bundle) ? value.dsh.bundle : undefined;
   const client = isRecord(value.dsh.client) ? value.dsh.client : undefined;
@@ -79,6 +81,8 @@ export function inspectDshPluginManifest(value: unknown): ManifestInspection {
   );
   return {
     compatible: hasBundle || hasClient,
+    hasBundle,
+    hasClient,
     installScripts: lifecycleScripts(value),
   };
 }
@@ -105,7 +109,7 @@ function repositorySlug(url: string): string | undefined {
   return /^https:\/\/github\.com\/([^/]+\/[^/#]+)/i.exec(url)?.[1]?.toLocaleLowerCase();
 }
 
-function inferCategory(manifest: Record<string, unknown>): string {
+export function inferPluginCategory(manifest: Record<string, unknown>): string {
   const keywords = Array.isArray(manifest.keywords)
     ? manifest.keywords.filter((value): value is string => typeof value === "string").join(" ")
     : "";
@@ -229,11 +233,13 @@ function entryFromNpmMetadata(name: string, value: unknown): PluginMarketEntry |
     name: manifestName,
     owner,
     url,
-    category: inferCategory(versioned.manifest),
+    category: inferPluginCategory(versioned.manifest),
     description: stringValue(versioned.manifest.description) ?? "已验证包含 DSH 插件声明的 npm 包",
     stars: 0,
     installCommand: `dsh plugin --profile web add ${manifestName}`,
     installed: false,
+    enabled: false,
+    canToggle: false,
     source: "npm",
     reviewStatus: "community",
     version: versioned.version,
@@ -263,11 +269,13 @@ async function githubEntry(
     name,
     owner: repository.owner,
     url: repository.htmlUrl,
-    category: inferCategory(manifest),
+    category: inferPluginCategory(manifest),
     description: stringValue(manifest.description) ?? repository.description,
     stars: repository.stars,
     installCommand: `dsh plugin --profile web add github:${repository.fullName}`,
     installed: false,
+    enabled: false,
+    canToggle: false,
     source: "github",
     reviewStatus: "community",
     ...(typeof manifest.version === "string" ? { version: manifest.version } : {}),

@@ -14,6 +14,8 @@ export interface PluginMarketEntry {
   installCommand: string;
   added?: string;
   installed: boolean;
+  enabled: boolean;
+  canToggle: boolean;
   dependencyName?: string;
   source: "catalog" | "npm" | "github";
   reviewStatus: "curated" | "community";

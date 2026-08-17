@@ -26,6 +26,8 @@ let snapshot = {
       stars: 1714,
       installCommand: "dsh plugin --profile web add dsh-better-sidebar",
       installed: false,
+      enabled: false,
+      canToggle: false,
       source: "catalog",
       reviewStatus: "curated",
     },
@@ -39,6 +41,8 @@ let snapshot = {
       stars: 2478,
       installCommand: "dsh plugin --profile web add @liustack/modlens",
       installed: false,
+      enabled: false,
+      canToggle: false,
       source: "catalog",
       reviewStatus: "curated",
     },
@@ -52,6 +56,8 @@ let snapshot = {
       stars: 270,
       installCommand: "dsh plugin --profile web add github:omdsh-dev/dsh-at-file",
       installed: true,
+      enabled: true,
+      canToggle: true,
       dependencyName: "dsh-at-file",
       source: "catalog",
       reviewStatus: "curated",
@@ -66,6 +72,8 @@ let snapshot = {
       stars: 112,
       installCommand: "dsh plugin --profile web add github:bowenliang123/dsh-context",
       installed: false,
+      enabled: false,
+      canToggle: false,
       source: "catalog",
       reviewStatus: "curated",
     },
@@ -75,7 +83,7 @@ let snapshot = {
   restartSupported: true,
 };
 
-const wallpaperPlugin = {
+let wallpaperPlugin = {
   id: "npm:dsh-plugin-wallpaper-engine",
   name: "dsh-plugin-wallpaper-engine",
   owner: "elysia395",
@@ -85,13 +93,15 @@ const wallpaperPlugin = {
   stars: 18,
   installCommand: "dsh plugin --profile web add dsh-plugin-wallpaper-engine",
   installed: false,
+  enabled: false,
+  canToggle: false,
   source: "npm",
   reviewStatus: "community",
   version: "0.1.3",
   installScripts: ["prepare"],
 };
 
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.2" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.7.0" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
 ipcMain.handle("desktop:get-update-states", () => ({
   desktop: { phase: "up-to-date", currentVersion: "0.6.2", supported: true },
@@ -106,10 +116,22 @@ ipcMain.handle("desktop:search-plugins", (_event, query) => ({
 }));
 ipcMain.handle("desktop:install-plugin", (_event, id) => {
   if (id === wallpaperPlugin.id) {
-    snapshot = { ...snapshot, restartRequired: true, installedCount: snapshot.installedCount + 1 };
+    wallpaperPlugin = {
+      ...wallpaperPlugin,
+      installed: true,
+      enabled: true,
+      canToggle: true,
+      dependencyName: wallpaperPlugin.name,
+    };
+    snapshot = {
+      ...snapshot,
+      restartRequired: true,
+      installedCount: snapshot.installedCount + 1,
+      plugins: [...snapshot.plugins, wallpaperPlugin],
+    };
     return {
       snapshot,
-      plugin: { ...wallpaperPlugin, installed: true, dependencyName: wallpaperPlugin.name },
+      plugin: wallpaperPlugin,
       message: "安装完成，重启 Harness 后生效",
       restartSupported: true,
     };
@@ -119,7 +141,7 @@ ipcMain.handle("desktop:install-plugin", (_event, id) => {
     restartRequired: true,
     installedCount: snapshot.installedCount + 1,
     plugins: snapshot.plugins.map((plugin) => plugin.id === id
-      ? { ...plugin, installed: true, dependencyName: plugin.name }
+      ? { ...plugin, installed: true, enabled: true, canToggle: true, dependencyName: plugin.name }
       : plugin),
   };
   return { snapshot, message: "安装完成，重启 Harness 后生效", restartSupported: true };
@@ -130,10 +152,27 @@ ipcMain.handle("desktop:remove-plugin", (_event, id) => {
     restartRequired: true,
     installedCount: Math.max(0, snapshot.installedCount - 1),
     plugins: snapshot.plugins.map((plugin) => plugin.id === id
-      ? { ...plugin, installed: false, dependencyName: undefined }
+      ? { ...plugin, installed: false, enabled: false, canToggle: false, dependencyName: undefined }
       : plugin),
   };
   return { snapshot, message: "卸载完成，重启 Harness 后生效", restartSupported: true };
+});
+ipcMain.handle("desktop:set-plugin-enabled", (_event, id, enabled) => {
+  snapshot = {
+    ...snapshot,
+    restartRequired: true,
+    plugins: snapshot.plugins.map((plugin) => plugin.id === id
+      ? { ...plugin, enabled }
+      : plugin),
+  };
+  const plugin = snapshot.plugins.find((entry) => entry.id === id);
+  if (id === wallpaperPlugin.id && plugin) wallpaperPlugin = plugin;
+  return {
+    snapshot,
+    plugin,
+    message: `${enabled ? "启用" : "停用"}完成，重启 Harness 后生效`,
+    restartSupported: true,
+  };
 });
 ipcMain.handle("desktop:restart-harness-for-plugins", () => true);
 ipcMain.handle("desktop:open-plugin-source", () => true);
@@ -268,9 +307,28 @@ app.whenReady().then(async () => {
     while (Date.now() < deadline && root.querySelectorAll('.installed').length < 1) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
+    const search = root.querySelector('.search');
+    search.value = '';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    [...root.querySelectorAll('.category')].find(el => el.textContent === '已安装').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const installedNames = [...root.querySelectorAll('.title')].map(el => el.textContent);
+    const wallpaperCard = [...root.querySelectorAll('.card')]
+      .find(card => card.querySelector('.title')?.textContent === 'dsh-plugin-wallpaper-engine');
+    wallpaperCard.querySelector('.toggle').click();
+    const toggleDeadline = Date.now() + 2000;
+    while (Date.now() < toggleDeadline && ![...root.querySelectorAll('.card')]
+      .find(card => card.querySelector('.title')?.textContent === 'dsh-plugin-wallpaper-engine')
+      ?.querySelector('.installed')?.textContent.includes('已停用')) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
     return {
       confirmationVisible,
       installedCount: root.querySelectorAll('.installed').length,
+      installedNames,
+      wallpaperState: [...root.querySelectorAll('.card')]
+        .find(card => card.querySelector('.title')?.textContent === 'dsh-plugin-wallpaper-engine')
+        ?.querySelector('.installed')?.textContent ?? '',
       notice: root.querySelector('.notice')?.textContent ?? '',
     };
   })()`);
@@ -306,12 +364,15 @@ app.whenReady().then(async () => {
     && result.tabIsolation.reactivated.display !== "none"
     && result.filteredCount === 1
     && !result.categoryLabels.includes("搜索")
+    && result.categoryLabels[0] === "已安装"
     && result.confirmationVisible === true
     && result.onlineSearchCount === 1
     && result.onlineReview.includes("未审核")
-    && result.installedCount === 1
-    && result.postInteraction.cards === 1
-    && result.postInteraction.installed === 1
+    && result.installedCount === 2
+    && result.installedNames.includes("dsh-plugin-wallpaper-engine")
+    && result.wallpaperState === "已停用"
+    && result.postInteraction.cards === 2
+    && result.postInteraction.installed === 2
     && result.notice.includes("重启 Harness 后生效");
   window.destroy();
   app.exit(passed ? 0 : 1);

@@ -1,12 +1,13 @@
 import type { PluginMarketEntry } from "../plugin-market-types";
 
-export type PluginMarketCategoryId = "featured" | "dev" | "vision" | "ui";
+export type PluginMarketCategoryId = "installed" | "featured" | "dev" | "vision" | "ui";
 export type PluginMarketSort = "popular" | "newest";
 
 export const PLUGIN_MARKET_CATEGORIES: ReadonlyArray<{
   id: PluginMarketCategoryId;
   label: string;
 }> = [
+  { id: "installed", label: "已安装" },
   { id: "featured", label: "精选" },
   { id: "dev", label: "开发工具" },
   { id: "vision", label: "视觉" },
@@ -37,6 +38,8 @@ function normalizedName(plugin: PluginMarketEntry): string {
 
 function categoryMatches(plugin: PluginMarketEntry, category: PluginMarketCategoryId): boolean {
   switch (category) {
+    case "installed":
+      return plugin.installed;
     case "featured":
       return FEATURED_NAMES.includes(normalizedName(plugin));
     case "dev":
