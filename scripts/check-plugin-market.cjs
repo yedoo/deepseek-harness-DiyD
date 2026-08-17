@@ -91,10 +91,10 @@ const wallpaperPlugin = {
   installScripts: ["prepare"],
 };
 
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.0" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.1" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
 ipcMain.handle("desktop:get-update-states", () => ({
-  desktop: { phase: "up-to-date", currentVersion: "0.6.0", supported: true },
+  desktop: { phase: "up-to-date", currentVersion: "0.6.1", supported: true },
   harness: { phase: "up-to-date", currentVersion: "0.1.0-rc.6", supported: true },
 }));
 ipcMain.handle("desktop:get-plugin-market", () => snapshot);
@@ -202,6 +202,7 @@ app.whenReady().then(async () => {
   const searchInteraction = await window.webContents.executeJavaScript(`(async () => {
     const panel = document.querySelector('[data-dsh-desktop-market-panel]');
     const root = panel.shadowRoot;
+    const categoryLabels = [...root.querySelectorAll('.category')].map(el => el.textContent?.trim());
     const search = root.querySelector('.search');
     search.value = 'ModLens';
     search.dispatchEvent(new Event('input', { bubbles: true }));
@@ -218,7 +219,7 @@ app.whenReady().then(async () => {
     }
     const onlineSearchCount = root.querySelectorAll('.card').length;
     const onlineReview = root.querySelector('[data-review="community"]')?.textContent ?? '';
-    return { filteredCount, onlineSearchCount, onlineReview };
+    return { categoryLabels, filteredCount, onlineSearchCount, onlineReview };
   })()`);
 
   if (resultScreenshotPath) {
@@ -264,6 +265,7 @@ app.whenReady().then(async () => {
   };
   console.log(JSON.stringify(result));
   const passed = result.filteredCount === 1
+    && !result.categoryLabels.includes("搜索")
     && result.confirmationVisible === true
     && result.onlineSearchCount === 1
     && result.onlineReview.includes("未审核")
