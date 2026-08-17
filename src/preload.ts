@@ -5,6 +5,11 @@ import {
   type UpdateChannelState,
   type UpdateStates,
 } from "./preload/update-presentation";
+import { injectPluginMarket } from "./preload/plugin-market-ui";
+import type {
+  PluginMarketOperationResult,
+  PluginMarketSnapshot,
+} from "./plugin-market-types";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -23,6 +28,16 @@ const desktopBridge = {
   retry: (): void => ipcRenderer.send("desktop:retry"),
   selectHarness: (): Promise<boolean> => ipcRenderer.invoke("desktop:select-harness"),
   openLogs: (): Promise<string> => ipcRenderer.invoke("desktop:open-logs"),
+  getPluginMarket: (forceRefresh = false): Promise<PluginMarketSnapshot> =>
+    ipcRenderer.invoke("desktop:get-plugin-market", forceRefresh),
+  installPlugin: (pluginId: string): Promise<PluginMarketOperationResult> =>
+    ipcRenderer.invoke("desktop:install-plugin", pluginId),
+  removePlugin: (pluginId: string): Promise<PluginMarketOperationResult> =>
+    ipcRenderer.invoke("desktop:remove-plugin", pluginId),
+  restartHarnessForPlugins: (): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:restart-harness-for-plugins"),
+  openPluginSource: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:open-plugin-source", url),
   getUpdateStates: (): Promise<UpdateStates> => ipcRenderer.invoke("desktop:get-update-states"),
   checkClientUpdate: (): Promise<DesktopUpdateState> =>
     ipcRenderer.invoke("desktop:check-client-update"),
@@ -542,7 +557,11 @@ function injectTitlebar(): void {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", injectTitlebar, { once: true });
+  document.addEventListener("DOMContentLoaded", () => {
+    injectTitlebar();
+    injectPluginMarket(desktopBridge);
+  }, { once: true });
 } else {
   injectTitlebar();
+  injectPluginMarket(desktopBridge);
 }

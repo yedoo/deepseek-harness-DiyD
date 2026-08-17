@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepSeek Harness 插件市场预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      color: #18181b;
+      background: #fff;
+      font: 14px/1.45 "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    }
+    button { font: inherit; }
+    .app { display: grid; grid-template-columns: 350px 1fr; width: 100%; height: 100%; }
+    .sidebar { padding: 32px 18px 22px; border-right: 1px solid #ececef; background: #fafbfc; }
+    .brand { font-size: 22px; font-weight: 700; letter-spacing: -1px; }
+    .brand small { padding: 2px 5px; border-radius: 3px; color: #fff; background: #18181b; font-size: 9px; letter-spacing: .5px; }
+    .new { width: 100%; height: 48px; margin-top: 36px; border: 1px solid #e2e2e5; border-radius: 12px; background: #fff; }
+    .workspace { margin: 28px 4px 12px; color: #7b7b84; }
+    .row { height: 42px; padding: 11px 16px; border-radius: 10px; }
+    .row.active { background: #edeef0; }
+    .settings { position: absolute; bottom: 28px; left: 28px; }
+    .main { display: grid; place-items: center; background: #fff; }
+    .composer { width: 760px; height: 140px; border: 1px solid #e3e3e6; border-radius: 18px; box-shadow: 0 14px 44px rgba(78, 104, 154, .1); }
+    .backdrop { position: fixed; inset: 0; background: rgba(24, 24, 27, .23); backdrop-filter: blur(3px); }
+    .modal {
+      position: fixed;
+      top: 64px;
+      left: 50%;
+      width: 1000px;
+      height: calc(100vh - 128px);
+      min-height: 760px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      padding: 28px 30px 30px;
+      border-radius: 28px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(24, 24, 27, .24);
+    }
+    .modalHeader { position: absolute; top: 24px; left: 30px; right: 30px; display: flex; justify-content: space-between; align-items: center; }
+    .modalTitle { font-size: 16px; }
+    .headerActions { display: flex; align-items: center; gap: 18px; }
+    .config { height: 36px; padding: 0 14px; border: 1px solid #e1e1e4; border-radius: 18px; background: #fff; }
+    .close { border: 0; background: transparent; font-size: 20px; }
+    .settingsNav { padding-top: 64px; padding-right: 32px; }
+    .navItem { width: 100%; height: 48px; padding: 0 14px; border: 0; border-radius: 12px; text-align: left; background: transparent; }
+    .navItem.active { background: #eceef1; }
+    .content { min-width: 0; padding: 42px 0 0 8px; }
+    .content h2 { margin: 0; font-size: 22px; }
+    .intro { margin: 10px 0 0; color: #8a8a93; }
+    .tabs { display: flex; gap: 28px; height: 48px; margin-top: 14px; border-bottom: 1px solid #e5e5e8; }
+    .tab { position: relative; border: 0; background: transparent; color: #71717a; }
+    .tab[data-active="true"] { color: #18181b; }
+    .tab[data-active="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: #18181b; }
+    .panel { padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">deepseek <small>HARNESS</small></div>
+      <button class="new">新会话</button>
+      <div class="workspace">工作区</div>
+      <div class="row">项目</div>
+      <div class="row active">新会话</div>
+      <div class="settings">设置</div>
+    </aside>
+    <main class="main"><div class="composer"></div></main>
+  </div>
+  <div class="backdrop"></div>
+  <section class="modal" aria-label="设置">
+    <div class="modalHeader">
+      <span class="modalTitle">设置</span>
+      <div class="headerActions">
+        <button class="config">打开配置文件</button>
+        <button class="close" aria-label="关闭">×</button>
+      </div>
+    </div>
+    <nav class="settingsNav">
+      <button class="navItem">通用设置</button>
+      <button class="navItem">模型</button>
+      <button class="navItem active">插件</button>
+      <button class="navItem">Agent 预设</button>
+    </nav>
+    <section class="content">
+      <h2>插件</h2>
+      <p class="intro">配置、安装和管理 DeepSeek Harness 插件。</p>
+      <div class="tabs" role="tablist" aria-label="插件页面">
+        <button class="tab" role="tab" data-active="true" aria-selected="true">插件配置</button>
+        <button class="tab" role="tab" aria-selected="false">插件列表</button>
+      </div>
+      <div class="panel" role="tabpanel"></div>
+      <div class="panel" role="tabpanel" hidden></div>
+    </section>
+  </section>
+</body>
+</html>

@@ -3,4 +3,5 @@ dist/
 release/
 coverage/
 *.log
+.tmp-*.png
 .DS_Store

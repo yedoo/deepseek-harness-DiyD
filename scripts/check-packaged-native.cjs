@@ -32,6 +32,17 @@ app.whenReady().then(async () => {
     "main",
     "harness-package-worker.js",
   );
+  const packagedPluginWorker = path.join(
+    __dirname,
+    "..",
+    "release",
+    "win-unpacked",
+    "resources",
+    "app.asar",
+    "dist",
+    "main",
+    "plugin-package-worker.js",
+  );
   const packagedExecutable = path.join(
     __dirname,
     "..",
@@ -57,10 +68,15 @@ app.whenReady().then(async () => {
     nativeBindingsLoaded: true,
     dialogFound: found,
     packagedInstallerFound: existsSync(packagedWorker),
+    packagedPluginInstallerFound: existsSync(packagedPluginWorker),
     packagedArboristVersion: arboristVersion,
   };
   console.log(JSON.stringify(result));
-  if (!result.packagedInstallerFound || result.packagedArboristVersion !== "9.9.1") {
+  if (
+    !result.packagedInstallerFound
+    || !result.packagedPluginInstallerFound
+    || result.packagedArboristVersion !== "9.9.1"
+  ) {
     app.exit(1);
     return;
   }
