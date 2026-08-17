@@ -18,11 +18,29 @@ interface ArboristConstructor {
     fund: boolean;
     cache?: string;
     preferOffline?: boolean;
+    preferOnline?: boolean;
   }): ArboristInstance;
 }
 
 const Arborist = require("@npmcli/arborist") as ArboristConstructor;
 const HARNESS_PACKAGE = "@deepseek-ai/dsh";
+
+export function harnessArboristOptions(prefix: string, cachePath?: string): {
+  path: string;
+  audit: boolean;
+  fund: boolean;
+  cache?: string;
+  preferOffline?: boolean;
+  preferOnline?: boolean;
+} {
+  return {
+    path: prefix,
+    audit: false,
+    fund: false,
+    cache: cachePath,
+    preferOnline: true,
+  };
+}
 
 export async function installHarnessPackage(
   prefix: string,
@@ -57,13 +75,7 @@ export async function installHarnessPackage(
     );
   }
   onReadyToInstall();
-  const arborist = new Arborist({
-    path: prefix,
-    audit: false,
-    fund: false,
-    cache: cachePath,
-    preferOffline: true,
-  });
+  const arborist = new Arborist(harnessArboristOptions(prefix, cachePath));
   await arborist.reify({
     add: [`${HARNESS_PACKAGE}@${version}`],
     save: true,

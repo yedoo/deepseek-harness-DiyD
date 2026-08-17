@@ -7,7 +7,10 @@ import {
   type HarnessPackageInstaller,
 } from "../src/main/harness-runtime-installer";
 import { readHarnessVersion } from "../src/main/harness-updater";
-import { bundledArboristVersion } from "../src/main/harness-package-worker";
+import {
+  bundledArboristVersion,
+  harnessArboristOptions,
+} from "../src/main/harness-package-worker";
 
 const temporaryDirectories: string[] = [];
 
@@ -44,6 +47,13 @@ function fakePackageInstaller(installedVersion?: string): HarnessPackageInstalle
 describe("HarnessRuntimeInstaller", () => {
   it("ships the isolated package installer used by packaged builds", () => {
     expect(bundledArboristVersion()).toBe("9.9.1");
+  });
+
+  it("refreshes npm metadata before installing a detected Harness release", () => {
+    expect(harnessArboristOptions("C:\\staging", "C:\\cache")).toMatchObject({
+      preferOnline: true,
+    });
+    expect(harnessArboristOptions("C:\\staging", "C:\\cache").preferOffline).toBeUndefined();
   });
 
   it("installs into staging and activates only after version verification", async () => {
