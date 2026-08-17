@@ -156,7 +156,7 @@ function installAppearanceSection(
   if (shell.nav.querySelector(`[${NAV_ATTRIBUTE}]`)) return;
   const navButton = document.createElement("button");
   navButton.type = "button";
-  navButton.className = shell.referenceButton.className;
+  navButton.className = withoutActiveClasses(shell.referenceButton.className);
   navButton.setAttribute(NAV_ATTRIBUTE, "true");
   navButton.innerHTML = `<span aria-hidden="true" style="display:inline-block;width:1.25em">◐</span><span>外观</span>`;
   shell.referenceButton.insertAdjacentElement("afterend", navButton);
@@ -175,14 +175,20 @@ function installAppearanceSection(
   const nativeChildren = (): HTMLElement[] => Array.from(shell.content.children)
     .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== host);
   const activate = (): void => {
+    if (active) return;
     active = true;
     nativeChildren().forEach((child) => {
       child.dataset.dshAppearancePreviousDisplay = child.style.display;
+      child.dataset.dshAppearancePreviousHidden = String(child.hidden);
       child.style.setProperty("display", "none", "important");
       child.hidden = true;
     });
     siblingNavButtons().forEach((button) => {
       button.dataset.dshAppearancePreviousBackground = button.style.background;
+      button.dataset.dshAppearancePreviousClass = button.className;
+      button.dataset.dshAppearancePreviousAriaCurrent = button.getAttribute("aria-current") ?? "__none__";
+      button.className = withoutActiveClasses(button.className);
+      button.removeAttribute("aria-current");
       button.style.setProperty("background", "transparent", "important");
     });
     host.hidden = false;
@@ -197,12 +203,19 @@ function installAppearanceSection(
       const previous = child.dataset.dshAppearancePreviousDisplay ?? "";
       previous ? child.style.setProperty("display", previous) : child.style.removeProperty("display");
       delete child.dataset.dshAppearancePreviousDisplay;
-      child.hidden = false;
+      child.hidden = child.dataset.dshAppearancePreviousHidden === "true";
+      delete child.dataset.dshAppearancePreviousHidden;
     });
     siblingNavButtons().forEach((button) => {
       const previous = button.dataset.dshAppearancePreviousBackground ?? "";
       previous ? button.style.setProperty("background", previous) : button.style.removeProperty("background");
       delete button.dataset.dshAppearancePreviousBackground;
+      button.className = button.dataset.dshAppearancePreviousClass ?? button.className;
+      delete button.dataset.dshAppearancePreviousClass;
+      const previousAriaCurrent = button.dataset.dshAppearancePreviousAriaCurrent;
+      if (previousAriaCurrent && previousAriaCurrent !== "__none__") button.setAttribute("aria-current", previousAriaCurrent);
+      else button.removeAttribute("aria-current");
+      delete button.dataset.dshAppearancePreviousAriaCurrent;
     });
     host.hidden = true;
     navButton.style.removeProperty("background");
@@ -339,14 +352,7 @@ function renderSettings(state: ViewState, registry: AppearanceProviderRegistry):
   const snapshot = state.snapshot!;
   const config = resolveEffectiveAppearance(snapshot);
   return `<div class="page settings-page">
-    <section class="block">
-      <div class="block-title"><div><h3>显示模式</h3><p>可跟随系统，也可固定为明亮或深色。</p></div>
-        <div class="segmented">
-          ${modeButton("system", "跟随系统", config.mode)}${modeButton("light", "明亮", config.mode)}${modeButton("dark", "深色", config.mode)}
-        </div>
-      </div>
-    </section>
-    <section class="block">
+    <section class="block first-block">
       <div class="block-title"><div><h3>背景来源</h3><p>同一时间只启用一个背景来源。</p></div></div>
       <div class="source-grid">
         ${sourceCard("none", "纯色背景", "保留 Harness 的简洁默认背景", config.background.kind === "none")}
@@ -473,9 +479,6 @@ function bindSettings(
   loadInventory: (providerId: string) => Promise<void>,
 ): void {
   if (state.page !== "settings") return;
-  root.querySelectorAll<HTMLElement>("[data-mode]").forEach((button) => button.addEventListener("click", () => {
-    void operation(() => api.updateAppearance({ mode: button.dataset.mode as "system" | "light" | "dark" }));
-  }));
   root.querySelectorAll<HTMLElement>("[data-source]").forEach((button) => button.addEventListener("click", () => {
     const source = button.dataset.source!;
     if (source === "local") {
@@ -634,10 +637,6 @@ function tabButton(page: AppearancePage, label: string, current: AppearancePage)
   return `<button data-page="${page}" aria-selected="${page === current}">${label}</button>`;
 }
 
-function modeButton(mode: string, label: string, current: string): string {
-  return `<button data-mode="${mode}" class="${mode === current ? "active" : ""}">${label}</button>`;
-}
-
 function sourceCard(id: string, title: string, description: string, active: boolean, disabled = false): string {
   return `<button class="source-card ${active ? "active" : ""}" data-source="${escapeAttr(id)}" ${disabled ? "disabled" : ""}><span class="source-icon">${id === "none" ? "○" : id === "local" ? "▧" : "◉"}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small>${active ? "<em>当前来源</em>" : ""}</button>`;
 }
@@ -677,17 +676,24 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string { return escapeHtml(value); }
 
+function withoutActiveClasses(className: string): string {
+  return className
+    .split(/\s+/)
+    .filter((token) => token && token !== "active" && !token.endsWith("_active"))
+    .join(" ");
+}
+
 function appearanceStyles(): string {
   return `
-    :host { display:block; height:100%; color:#18181b; font:14px/1.45 "Segoe UI Variable","Segoe UI","Microsoft YaHei UI",sans-serif; }
-    :host([hidden]) { display:none !important; } * { box-sizing:border-box; } button,input,select { font:inherit; color:inherit; }
-    .shell { height:100%; min-height:620px; overflow:auto; padding:0 4px 40px; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
-    h2,h3,p { margin:0; } h2 { font-size:22px; } header p,.block-title p,.toolbar p,.editor-section>p { margin-top:6px; color:#8a8a93; }
+    :host { display:block; height:100%; min-height:0; color:var(--dsw-alias-label-primary,#18181b); font:14px/1.45 "Segoe UI Variable","Segoe UI","Microsoft YaHei UI",sans-serif; }
+    :host([hidden]) { display:none !important; } *,*::before,*::after { box-sizing:border-box; } button,input,select { font:inherit; color:inherit; }
+    .shell { height:100%; min-height:0; overflow:auto; padding:0 4px 40px; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
+    h2,h3,p { margin:0; } h2 { font-size:22px; } header p,.block-title p,.toolbar p,.editor-section>p { margin-top:6px; color:var(--dsw-alias-label-secondary,#8a8a93); }
     .tabs { display:flex; gap:28px; height:49px; margin-top:12px; border-bottom:1px solid #e5e5e8; } .tabs button { position:relative; border:0; background:transparent; color:#777780; cursor:pointer; }
     .tabs button[aria-selected=true] { color:#18181b; font-weight:600; } .tabs button[aria-selected=true]::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#18181b; }
-    .page { padding-top:18px; } .block { padding:18px 0; border-bottom:1px solid #ececef; } .block-title,.toolbar,.editor-head,.provider-line,.section-heading,.danger-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .page { padding-top:18px; } .block { padding:18px 0; border-bottom:1px solid #ececef; } .block.first-block { padding-top:0; } .block-title,.toolbar,.editor-head,.provider-line,.section-heading,.danger-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
     .block-title h3,.section-heading h3,.editor-section h3 { font-size:15px; } button { border:1px solid #dddfe4; border-radius:9px; background:#fff; min-height:34px; padding:0 12px; cursor:pointer; } button:hover { background:#f5f6f7; } button:disabled { opacity:.45; cursor:not-allowed; }
-    button.primary { color:white; border-color:#18181b; background:#18181b; } .text-btn { border:0; color:#6d6d76; background:transparent; } .segmented { display:flex; padding:3px; border-radius:10px; background:#f1f2f4; } .segmented button { min-height:30px; border:0; background:transparent; } .segmented button.active { background:#fff; box-shadow:0 1px 4px rgba(24,24,27,.1); }
+    button.primary { color:white; border-color:#18181b; background:#18181b; } .text-btn { border:0; color:#6d6d76; background:transparent; }
     .source-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:15px; } .source-card { position:relative; min-height:112px; display:grid; grid-template-columns:36px 1fr; grid-template-rows:auto auto; gap:2px 9px; padding:15px; text-align:left; }
     .source-card.active { border-color:#7aa2ff; box-shadow:0 0 0 3px rgba(90,139,239,.1); } .source-icon { grid-row:1/3; display:grid; place-items:center; width:36px; height:36px; border-radius:10px; background:#f0f2f6; font-size:20px; } .source-card small { color:#85858e; } .source-card em { position:absolute; right:10px; top:9px; color:#3978e8; font-size:10px; font-style:normal; }
     .provider-panel { margin-top:10px; padding:13px; border:1px solid #e3e4e7; border-radius:10px; background:#fafafb; } .provider-panel select { flex:1; height:36px; border:1px solid #dfe0e4; border-radius:8px; background:white; padding:0 10px; } .provider-panel small { display:block; margin-top:7px; color:#8a8a93; } .provider-panel.error { color:#b42318; } .provider-actions { display:flex; gap:7px; margin-top:9px; } .provider-slider { display:grid; grid-template-columns:86px 1fr 44px; align-items:center; gap:8px; margin-top:10px; } .provider-slider input { width:100%; accent-color:#6b9df6; } .provider-slider output { color:#7a7a84; text-align:right; font-size:12px; }
@@ -702,6 +708,6 @@ function appearanceStyles(): string {
     .asset-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:13px; } .asset-slot { min-height:78px; display:grid; grid-template-columns:32px 1fr; grid-template-rows:auto auto; gap:0 8px; text-align:left; } .asset-slot>span { grid-row:1/3; place-self:center; display:grid; place-items:center; width:30px; height:30px; border-radius:9px; background:#f0f2f6; } .asset-slot small { color:#8d8d96; } .asset-slot.selected { border-color:#98b7ef; } .danger-row { padding-top:18px; justify-content:flex-end; } .danger { color:#c43232; }
     .notice { margin-top:12px; padding:9px 11px; border-radius:9px; font-size:12px; } .notice.success { color:#137a44; background:#eefaf3; } .notice.error { color:#b42318; background:#fff1f0; } .empty,.soft-empty { padding:42px 18px; color:#8b8b94; text-align:center; } .soft-empty { border:1px dashed #dedfe3; border-radius:12px; }
     @media (max-width:1050px) { .source-grid,.asset-grid { grid-template-columns:1fr 1fr; } .theme-grid { grid-template-columns:1fr; } .sliders { grid-template-columns:1fr; } }
-    @media (prefers-color-scheme:dark) { :host { color:#f4f4f5; } .tabs { border-color:#3b3b40; } .tabs button[aria-selected=true] { color:#fff; } .tabs button[aria-selected=true]::after { background:#fff; } button { border-color:#424248; background:#29292e; } button:hover { background:#34343a; } .block,.editor-section { border-color:#36363b; } .source-icon,.asset-slot>span { background:#313239; } .provider-panel { border-color:#3d3d43; background:#25252a; } .provider-panel select { border-color:#46464d; background:#29292e; } .extension-card,.theme-card,.color,.preview { border-color:#3d3d43; } .soft-empty { border-color:#45454b; } }
+    :host-context(body[data-ds-dark-theme]) { color:var(--dsw-alias-label-primary,#f4f4f5); } :host-context(body[data-ds-dark-theme]) .tabs { border-color:#3b3b40; } :host-context(body[data-ds-dark-theme]) .tabs button[aria-selected=true] { color:#fff; } :host-context(body[data-ds-dark-theme]) .tabs button[aria-selected=true]::after { background:#fff; } :host-context(body[data-ds-dark-theme]) button { color:inherit; border-color:#424248; background:#29292e; } :host-context(body[data-ds-dark-theme]) button:hover { background:#34343a; } :host-context(body[data-ds-dark-theme]) .block,:host-context(body[data-ds-dark-theme]) .editor-section { border-color:#36363b; } :host-context(body[data-ds-dark-theme]) .source-icon,:host-context(body[data-ds-dark-theme]) .asset-slot>span { background:#313239; } :host-context(body[data-ds-dark-theme]) .provider-panel { border-color:#3d3d43; background:#25252a; } :host-context(body[data-ds-dark-theme]) .provider-panel select { color:inherit; border-color:#46464d; background:#29292e; } :host-context(body[data-ds-dark-theme]) .extension-card,:host-context(body[data-ds-dark-theme]) .theme-card,:host-context(body[data-ds-dark-theme]) .color,:host-context(body[data-ds-dark-theme]) .preview { border-color:#3d3d43; } :host-context(body[data-ds-dark-theme]) .soft-empty { border-color:#45454b; }
   `;
 }

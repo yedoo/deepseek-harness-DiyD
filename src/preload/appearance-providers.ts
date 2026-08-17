@@ -18,6 +18,7 @@ export interface AppearanceProviderInventory {
 
 export interface AppearanceProviderAdapter {
   readonly id: string;
+  readonly legacySettingsSelectors?: readonly string[];
   inventory?(): Promise<AppearanceProviderInventory>;
   resolveMedia?(state: AppearanceProviderState): Promise<AppearanceProviderOption | undefined>;
   syncCompatibilityState?(state: AppearanceProviderState): void;
@@ -38,6 +39,7 @@ interface WallpaperInventoryResponse {
 
 class WallpaperEngineAdapter implements AppearanceProviderAdapter {
   readonly id = "wallpaper-engine";
+  readonly legacySettingsSelectors = [".we-picker"] as const;
 
   async inventory(): Promise<AppearanceProviderInventory> {
     try {
@@ -148,6 +150,12 @@ export class AppearanceProviderRegistry {
 
   descriptors(): AppearanceProviderDescriptor[] {
     return [...this.externalDescriptors.values()];
+  }
+
+  legacySettingsSelectors(): string[] {
+    return [...new Set(
+      [...this.adapters.values()].flatMap((adapter) => adapter.legacySettingsSelectors ?? []),
+    )];
   }
 }
 

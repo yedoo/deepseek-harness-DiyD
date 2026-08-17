@@ -56,7 +56,8 @@ describe("appearance presentation", () => {
       "--dsh-appearance-blur": "24px",
       "--dsh-appearance-panel-opacity": "0.74",
       "--dsh-appearance-radius": "22px",
-      "--dsw-alias-label-primary": "#f4f7ff",
+      "--dsh-appearance-text": "#f4f7ff",
     });
+    expect(variables).not.toHaveProperty("--dsw-alias-label-primary");
   });
 });
