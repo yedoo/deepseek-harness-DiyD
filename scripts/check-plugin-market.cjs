@@ -91,10 +91,10 @@ const wallpaperPlugin = {
   installScripts: ["prepare"],
 };
 
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.1" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.6.2" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
 ipcMain.handle("desktop:get-update-states", () => ({
-  desktop: { phase: "up-to-date", currentVersion: "0.6.1", supported: true },
+  desktop: { phase: "up-to-date", currentVersion: "0.6.2", supported: true },
   harness: { phase: "up-to-date", currentVersion: "0.1.0-rc.6", supported: true },
 }));
 ipcMain.handle("desktop:get-plugin-market", () => snapshot);
@@ -186,6 +186,10 @@ app.whenReady().then(async () => {
     `);
   }
   await waitForPage(window, `document.querySelector('[data-dsh-desktop-market-tab]')`);
+  const initialIsolation = await window.webContents.executeJavaScript(`(() => {
+    const panel = document.querySelector('[data-dsh-desktop-market-panel]');
+    return { hidden: panel.hidden, display: getComputedStyle(panel).display };
+  })()`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-desktop-market-tab]').click()`);
   await waitForPage(window, `document.querySelector('[data-dsh-desktop-market-panel]')?.shadowRoot?.querySelectorAll('.card').length === 4`);
   if (!useFixture) {
@@ -194,9 +198,35 @@ app.whenReady().then(async () => {
   await new Promise((resolve) => setTimeout(resolve, useFixture ? 2_000 : 500));
   await waitForPage(window, `document.querySelector('[data-dsh-desktop-market-panel]')?.shadowRoot?.querySelectorAll('.card').length === 4`);
 
+  const tabIsolation = await window.webContents.executeJavaScript(`(async () => {
+    const panel = document.querySelector('[data-dsh-desktop-market-panel]');
+    const marketTab = document.querySelector('[data-dsh-desktop-market-tab]');
+    const nativeTabs = [...marketTab.parentElement.querySelectorAll('[role="tab"]')]
+      .filter(tab => tab !== marketTab);
+    const active = { hidden: panel.hidden, display: getComputedStyle(panel).display };
+    const native = [];
+    for (const nativeTab of nativeTabs) {
+      nativeTab.click();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      native.push({ hidden: panel.hidden, display: getComputedStyle(panel).display });
+      marketTab.click();
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    marketTab.click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const reactivated = { hidden: panel.hidden, display: getComputedStyle(panel).display };
+    return { active, native, reactivated };
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  if (screenshotPath) {
+    window.showInactive();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
   const image = await window.webContents.capturePage();
   if (screenshotPath) {
     writeFileSync(screenshotPath, image.toPNG());
+    window.hide();
   }
 
   const searchInteraction = await window.webContents.executeJavaScript(`(async () => {
@@ -259,12 +289,22 @@ app.whenReady().then(async () => {
   const result = {
     marketTab: true,
     initialCards: 4,
+    initialIsolation,
+    tabIsolation,
     ...searchInteraction,
     ...installInteraction,
     postInteraction,
   };
   console.log(JSON.stringify(result));
-  const passed = result.filteredCount === 1
+  const passed = result.initialIsolation.hidden === true
+    && result.initialIsolation.display === "none"
+    && result.tabIsolation.active.hidden === false
+    && result.tabIsolation.active.display !== "none"
+    && result.tabIsolation.native.length >= 2
+    && result.tabIsolation.native.every(state => state.hidden === true && state.display === "none")
+    && result.tabIsolation.reactivated.hidden === false
+    && result.tabIsolation.reactivated.display !== "none"
+    && result.filteredCount === 1
     && !result.categoryLabels.includes("搜索")
     && result.confirmationVisible === true
     && result.onlineSearchCount === 1

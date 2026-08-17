@@ -113,6 +113,7 @@ function marketplaceStyles(): string {
       color: #18181b;
       font: 14px/1.45 "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
     }
+    :host([hidden]) { display: none !important; }
     * { box-sizing: border-box; }
     button, input, select { font: inherit; }
     button { color: inherit; }
