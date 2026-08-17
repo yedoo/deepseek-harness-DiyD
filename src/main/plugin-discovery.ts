@@ -112,7 +112,7 @@ function inferCategory(manifest: Record<string, unknown>): string {
   const text = `${stringValue(manifest.name) ?? ""} ${stringValue(manifest.description) ?? ""} ${keywords}`;
   if (/wallpaper|theme|skin|壁纸|主题/i.test(text)) return "theme";
   if (/vision|image|ocr|视觉|图片/i.test(text)) return "vision";
-  if (/search|browser|fetch|搜索|浏览器/i.test(text)) return "search";
+  if (/search|browser|fetch|搜索|浏览器/i.test(text)) return "tools";
   if (/memory|context|记忆|上下文/i.test(text)) return "memory";
   if (/sidebar|layout|ui|界面|侧边栏/i.test(text)) return "ui";
   return "community";

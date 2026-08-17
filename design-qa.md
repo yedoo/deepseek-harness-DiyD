@@ -34,6 +34,12 @@ final result: passed
 - Added compact provenance badges (`已审核`, `npm · 未审核`, `GitHub · 未审核`) and version metadata without changing card height.
 - Verified the online-result state with `dsh-plugin-wallpaper-engine`; the result remains readable and the unreviewed status is visible before installation.
 
+### Iteration 4 — category cleanup
+
+- Removed the duplicate `搜索` category; the search field is now the only market-search control.
+- Search/browser plugins are grouped under the existing tool classification instead of maintaining a second search concept.
+- Added an Electron interaction assertion so the duplicate category cannot silently return.
+
 ## Final severity assessment
 
 - P0 blockers: none
@@ -43,7 +49,7 @@ final result: passed
   - The existing Harness tab label remains `插件列表` instead of replacing it with an installed-count label; this preserves the host UI outside the new market tab.
   - Repository avatars use live GitHub identicons instead of invented logos; failed images collapse cleanly.
   - A small `刷新目录` action and an uninstall action are present because they are required for a functioning independent market.
-  - The title bar shows v0.6.0, the release containing open npm/GitHub discovery.
+  - The title bar shows v0.6.1, the release removing the duplicate search category.
 
 ## Interaction verification
 

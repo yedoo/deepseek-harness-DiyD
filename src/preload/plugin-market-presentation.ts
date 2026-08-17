@@ -1,6 +1,6 @@
 import type { PluginMarketEntry } from "../plugin-market-types";
 
-export type PluginMarketCategoryId = "featured" | "dev" | "vision" | "search" | "ui";
+export type PluginMarketCategoryId = "featured" | "dev" | "vision" | "ui";
 export type PluginMarketSort = "popular" | "newest";
 
 export const PLUGIN_MARKET_CATEGORIES: ReadonlyArray<{
@@ -10,7 +10,6 @@ export const PLUGIN_MARKET_CATEGORIES: ReadonlyArray<{
   { id: "featured", label: "精选" },
   { id: "dev", label: "开发工具" },
   { id: "vision", label: "视觉" },
-  { id: "search", label: "搜索" },
   { id: "ui", label: "界面增强" },
 ];
 
@@ -36,12 +35,6 @@ function normalizedName(plugin: PluginMarketEntry): string {
   return plugin.name.toLocaleLowerCase();
 }
 
-function isSearchPlugin(plugin: PluginMarketEntry): boolean {
-  return /search|fetch|browser|搜索|检索|浏览器/i.test(
-    `${plugin.name} ${plugin.description}`,
-  );
-}
-
 function categoryMatches(plugin: PluginMarketEntry, category: PluginMarketCategoryId): boolean {
   switch (category) {
     case "featured":
@@ -50,8 +43,6 @@ function categoryMatches(plugin: PluginMarketEntry, category: PluginMarketCatego
       return ["dev", "tools", "workflow", "skill"].includes(plugin.category);
     case "vision":
       return plugin.category === "vision";
-    case "search":
-      return isSearchPlugin(plugin);
     case "ui":
       return plugin.category === "ui";
   }

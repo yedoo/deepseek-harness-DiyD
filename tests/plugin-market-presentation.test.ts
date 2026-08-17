@@ -4,6 +4,7 @@ import {
   displayPluginName,
   filterPluginMarketEntries,
   formatPluginStars,
+  PLUGIN_MARKET_CATEGORIES,
 } from "../src/preload/plugin-market-presentation";
 
 function plugin(
@@ -42,18 +43,16 @@ describe("plugin market presentation", () => {
     ).toEqual(["DSH-better-sidebar", "modlens", "dsh-at-file", "dsh-context"]);
   });
 
-  it("filters search tools and performs a case-insensitive text search", () => {
+  it("uses the input for case-insensitive text search without a duplicate search category", () => {
     const entries = [
       plugin("modsearch", "tools", 120, "网页与 X 搜索"),
       plugin("dsh-browser", "ui", 200, "Browser automation"),
       plugin("dsh-context", "dev", 112, "上下文分析"),
     ];
 
+    expect(PLUGIN_MARKET_CATEGORIES.map((category) => category.label)).not.toContain("搜索");
     expect(
-      filterPluginMarketEntries(entries, "", "search", "popular").map((entry) => entry.name),
-    ).toEqual(["dsh-browser", "modsearch"]);
-    expect(
-      filterPluginMarketEntries(entries, "BROWSER", "search", "popular")
+      filterPluginMarketEntries(entries, "BROWSER", "featured", "popular")
         .map((entry) => entry.name),
     ).toEqual(["dsh-browser"]);
   });
