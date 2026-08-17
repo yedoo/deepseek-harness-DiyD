@@ -5,6 +5,8 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const screenshotPath = process.env.DSH_APPEARANCE_SCREENSHOT;
 const settingsScreenshotPath = process.env.DSH_APPEARANCE_SETTINGS_SCREENSHOT;
 const targetUrl = process.env.DSH_APPEARANCE_TEST_URL;
+const testWidth = Number(process.env.DSH_APPEARANCE_TEST_WIDTH || 1752);
+const testHeight = Number(process.env.DSH_APPEARANCE_TEST_HEIGHT || 1128);
 const now = "2026-08-17T00:00:00.000Z";
 const config = (mode, surface, sidebar, accent, text) => ({
   mode,
@@ -16,9 +18,10 @@ const config = (mode, surface, sidebar, accent, text) => ({
 let snapshot = {
   settings: {
     ...config("light", "#ffffff", "#f7f8fa", "#3b82f6", "#18181b"),
+    background: { kind: "provider", providerId: "wallpaper-engine" },
     activeThemeId: "builtin-light",
-    providers: { "wallpaper-engine": { enabled: false, settings: {} } },
-    overrides: {},
+    providers: { "wallpaper-engine": { enabled: true, settings: {} } },
+    overrides: { background: { kind: "provider", providerId: "wallpaper-engine" } },
   },
   themes: [
     { id: "builtin-light", name: "简洁明亮", author: "DeepSeek Harness Desktop", version: "1.0.0", kind: "builtin", createdAt: now, updatedAt: now, config: config("light", "#ffffff", "#f7f8fa", "#3b82f6", "#18181b") },
@@ -29,9 +32,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.1" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.2" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.1", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.2", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {
@@ -74,8 +77,8 @@ async function waitFor(window, expression, timeout = 10000) {
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
-    width: 1500,
-    height: 980,
+    width: testWidth,
+    height: testHeight,
     show: false,
     frame: false,
     webPreferences: {
@@ -107,20 +110,51 @@ app.whenReady().then(async () => {
   const legacyWallpaperPickerDisplay = await window.webContents.executeJavaScript(`document.querySelector('.we-picker') ? getComputedStyle(document.querySelector('.we-picker')).display : 'absent'`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-nav]').click()`);
   await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelectorAll('.source-card').length === 3`);
+  await waitFor(window, `(() => { const panel = document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelector('.provider-panel'); return panel && !panel.textContent.includes('正在读取'); })()`);
   const regression = await window.webContents.executeJavaScript(`(() => {
     const appearanceNav = document.querySelector('[data-dsh-appearance-nav]');
     const modal = appearanceNav?.closest('[role=dialog]') || appearanceNav?.closest('section') || appearanceNav?.parentElement?.parentElement;
     const navItems = appearanceNav?.parentElement ? [...appearanceNav.parentElement.children] : [];
     const root = document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot;
+    const host = document.querySelector('[data-dsh-appearance-panel]');
+    const hostParent = host?.parentElement;
     const activeNavItems = navItems.filter((element) => {
       const className = typeof element.className === 'string' ? element.className : '';
       return element.getAttribute('aria-current') || className.split(/\\s+/).some((token) => token === 'active' || token.endsWith('_active'));
     });
     const rect = modal?.getBoundingClientRect();
+    const shell = root?.querySelector('.shell');
+    const shellRect = shell?.getBoundingClientRect();
+    const contentEdges = root ? [...root.querySelectorAll('.tabs,.block')].map((element) => element.getBoundingClientRect().right) : [];
+    const lastContent = root?.querySelector('.extension-card') || root?.querySelector('.block:last-child');
+    if (shell) shell.scrollTop = shell.scrollHeight;
+    const lastContentRect = lastContent?.getBoundingClientRect();
+    const layout = shell && shellRect ? {
+      overflowY: getComputedStyle(shell).overflowY,
+      clientHeight: shell.clientHeight,
+      scrollHeight: shell.scrollHeight,
+      scrollTopAtBottom: shell.scrollTop,
+      rightInset: rect && contentEdges.length ? rect.right - Math.max(...contentEdges) : -1,
+      lastContentBottom: lastContentRect?.bottom ?? -1,
+      viewportBottom: shellRect.bottom,
+      host: host ? { top: host.getBoundingClientRect().top, bottom: host.getBoundingClientRect().bottom, height: host.getBoundingClientRect().height } : null,
+      parent: hostParent ? {
+        top: hostParent.getBoundingClientRect().top,
+        bottom: hostParent.getBoundingClientRect().bottom,
+        height: hostParent.getBoundingClientRect().height,
+        clientHeight: hostParent.clientHeight,
+        scrollHeight: hostParent.scrollHeight,
+        overflowY: getComputedStyle(hostParent).overflowY,
+        paddingTop: getComputedStyle(hostParent).paddingTop,
+        paddingBottom: getComputedStyle(hostParent).paddingBottom,
+      } : null,
+    } : null;
+    if (shell) shell.scrollTop = 0;
     return {
       activeNavItems: activeNavItems.map((element) => element.textContent?.trim()),
       modeButtonCount: root ? [...root.querySelectorAll('button')].filter((element) => ['跟随系统', '明亮', '深色'].includes(element.textContent?.trim())).length : -1,
       modal: rect ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, scrollHeight: modal.scrollHeight, clientHeight: modal.clientHeight } : null,
+      layout,
       viewport: { width: innerWidth, height: innerHeight },
     };
   })()`);
@@ -136,6 +170,8 @@ app.whenReady().then(async () => {
   if (regression.activeNavItems.length !== 1 || !regression.activeNavItems[0]?.includes('外观')) regressionProblems.push(`active navigation: ${JSON.stringify(regression.activeNavItems)}`);
   if (regression.modeButtonCount !== 0) regressionProblems.push(`duplicate display-mode controls: ${regression.modeButtonCount}`);
   if (!regression.modal || regression.modal.left < 0 || regression.modal.top < 0 || regression.modal.right > regression.viewport.width + 1 || regression.modal.bottom > regression.viewport.height + 1 || regression.modal.scrollHeight > regression.modal.clientHeight + 1) regressionProblems.push(`squeezed modal: ${JSON.stringify(regression.modal)}`);
+  if (!regression.layout || regression.layout.rightInset < 20) regressionProblems.push(`cramped right edge: ${JSON.stringify(regression.layout)}`);
+  if (!regression.layout || !['auto', 'scroll'].includes(regression.layout.overflowY) || (regression.layout.scrollHeight > regression.layout.clientHeight + 1 && regression.layout.scrollTopAtBottom < 1) || regression.layout.lastContentBottom > regression.layout.viewportBottom + 1) regressionProblems.push(`bottom content unreachable: ${JSON.stringify(regression.layout)}`);
   if (legacyWallpaperPickerDisplay !== 'absent' && legacyWallpaperPickerDisplay !== 'none') regressionProblems.push(`legacy Wallpaper picker visible: ${legacyWallpaperPickerDisplay}`);
   const nativeDarkTextChannels = nativeThemeRegression.hostColor.match(/\d+/g)?.map(Number) ?? [];
   const nativeDarkTextIsLight = nativeDarkTextChannels.length >= 3

@@ -247,6 +247,7 @@ function createPanel(
     loadingInventories: new Set(),
   };
   const root = document.createElement("div");
+  root.className = "panel-root";
   const style = document.createElement("style");
   style.textContent = appearanceStyles();
   shadow.append(style, root);
@@ -687,7 +688,7 @@ function appearanceStyles(): string {
   return `
     :host { display:block; height:100%; min-height:0; color:var(--dsw-alias-label-primary,#18181b); font:14px/1.45 "Segoe UI Variable","Segoe UI","Microsoft YaHei UI",sans-serif; }
     :host([hidden]) { display:none !important; } *,*::before,*::after { box-sizing:border-box; } button,input,select { font:inherit; color:inherit; }
-    .shell { height:100%; min-height:0; overflow:auto; padding:0 4px 40px; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
+    .panel-root { height:100%; min-height:0; overflow:hidden; } .shell { height:100%; min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-gutter:stable; padding:0 24px 40px 0; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
     h2,h3,p { margin:0; } h2 { font-size:22px; } header p,.block-title p,.toolbar p,.editor-section>p { margin-top:6px; color:var(--dsw-alias-label-secondary,#8a8a93); }
     .tabs { display:flex; gap:28px; height:49px; margin-top:12px; border-bottom:1px solid #e5e5e8; } .tabs button { position:relative; border:0; background:transparent; color:#777780; cursor:pointer; }
     .tabs button[aria-selected=true] { color:#18181b; font-weight:600; } .tabs button[aria-selected=true]::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#18181b; }
