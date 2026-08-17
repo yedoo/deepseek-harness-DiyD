@@ -32,9 +32,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.3" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.4" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.3", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.4", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {

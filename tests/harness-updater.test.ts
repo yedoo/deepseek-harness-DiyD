@@ -31,12 +31,27 @@ describe("HarnessUpdater", () => {
 
   it("reads the release version from the official npm metadata endpoint", async () => {
     const fakeFetch: typeof fetch = async (input) => {
-      expect(String(input)).toBe("https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest");
-      return new Response(JSON.stringify({ version: "0.1.0-rc.6" }), {
+      expect(String(input)).toBe("https://registry.npmjs.org/@deepseek-ai%2Fdsh");
+      return new Response(JSON.stringify({
+        "dist-tags": { latest: "0.1.0-rc.6" },
+        versions: { "0.1.0-rc.6": { version: "0.1.0-rc.6" } },
+      }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     };
+
+    await expect(fetchLatestHarnessVersion(fakeFetch)).resolves.toBe("0.1.0-rc.6");
+  });
+
+  it("does not advertise a dist-tag before that version is installable", async () => {
+    const fakeFetch: typeof fetch = async () => new Response(JSON.stringify({
+      "dist-tags": { latest: "0.1.0-rc.7" },
+      versions: { "0.1.0-rc.6": { version: "0.1.0-rc.6" } },
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
 
     await expect(fetchLatestHarnessVersion(fakeFetch)).resolves.toBe("0.1.0-rc.6");
   });

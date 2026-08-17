@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { gt, valid } from "semver";
+import { gt, rcompare, valid } from "semver";
 import { inspectHarnessInstallation } from "./config";
 import type { HarnessInstallStage } from "./harness-runtime-installer";
 
@@ -32,7 +32,7 @@ export type HarnessVersionInstaller = (
 ) => Promise<void>;
 export type HarnessUpdateListener = (state: HarnessUpdateState) => void;
 
-const HARNESS_LATEST_URL = "https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest";
+const HARNESS_PACKAGE_URL = "https://registry.npmjs.org/@deepseek-ai%2Fdsh";
 
 export function readHarnessVersion(harnessRoot: string): string {
   const installation = inspectHarnessInstallation(harnessRoot);
@@ -52,20 +52,38 @@ export async function fetchLatestHarnessVersion(
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetcher(HARNESS_LATEST_URL, {
-      headers: { Accept: "application/json" },
+    const response = await fetcher(HARNESS_PACKAGE_URL, {
+      headers: {
+        Accept: "application/vnd.npm.install-v1+json",
+        "Cache-Control": "no-cache",
+      },
       signal: controller.signal,
     });
     if (!response.ok) {
       throw new Error(`Harness 版本检查失败（HTTP ${response.status}）`);
     }
-    const metadata = await response.json() as { version?: unknown };
-    if (typeof metadata.version !== "string") {
-      throw new Error("Harness 版本响应缺少 version");
+    const metadata = await response.json() as {
+      "dist-tags"?: { latest?: unknown };
+      versions?: Record<string, { version?: unknown }>;
+    };
+    const versions = metadata.versions ?? {};
+    const installableVersions = Object.keys(versions)
+      .filter((version) => (
+        valid(version) !== null
+        && versions[version]?.version === version
+      ))
+      .sort(rcompare);
+    const taggedVersion = metadata["dist-tags"]?.latest;
+    const latest = typeof taggedVersion === "string"
+      && versions[taggedVersion]?.version === taggedVersion
+      ? taggedVersion
+      : installableVersions[0];
+    if (!latest) {
+      throw new Error("Harness 版本响应中没有可安装版本");
     }
-    return metadata.version;
+    return latest;
   } finally {
     clearTimeout(timeout);
   }
