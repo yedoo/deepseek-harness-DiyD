@@ -40,6 +40,12 @@ final result: passed
 - Search/browser plugins are grouped under the existing tool classification instead of maintaining a second search concept.
 - Added an Electron interaction assertion so the duplicate category cannot silently return.
 
+### Iteration 5 — tab isolation
+
+- Corrected the Shadow DOM host rule so a hidden market panel computes to `display: none`.
+- Verified the market starts hidden, appears only after selecting `插件市场`, and hides again when either native plugin tab is selected.
+- Added the visibility transitions to the Electron interaction smoke test.
+
 ## Final severity assessment
 
 - P0 blockers: none
@@ -49,7 +55,7 @@ final result: passed
   - The existing Harness tab label remains `插件列表` instead of replacing it with an installed-count label; this preserves the host UI outside the new market tab.
   - Repository avatars use live GitHub identicons instead of invented logos; failed images collapse cleanly.
   - A small `刷新目录` action and an uninstall action are present because they are required for a functioning independent market.
-  - The title bar shows v0.6.1, the release removing the duplicate search category.
+  - The title bar shows v0.6.2, the release fixing plugin-tab isolation.
 
 ## Interaction verification
 
