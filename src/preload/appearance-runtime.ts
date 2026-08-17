@@ -19,29 +19,25 @@ export function installAppearanceRuntime(
   registry: AppearanceProviderRegistry,
 ): { apply(snapshot: AppearanceSnapshot): Promise<void>; dispose(): void } {
   let sequence = 0;
-  let desiredDark: boolean | undefined;
-  const media = matchMedia("(prefers-color-scheme: dark)");
   let lastSnapshot: AppearanceSnapshot | undefined;
-  const mediaListener = (): void => {
+  const syncNativeTheme = (): void => {
+    const dark = document.body.hasAttribute("data-ds-dark-theme");
+    document.getElementById("dsh-desktop-titlebar")?.setAttribute("data-theme", dark ? "dark" : "light");
     if (lastSnapshot) {
       void apply(lastSnapshot);
     }
   };
-  media.addEventListener("change", mediaListener);
-  const themeObserver = new MutationObserver(() => {
-    if (desiredDark !== undefined && document.body.hasAttribute("data-ds-dark-theme") !== desiredDark) {
-      document.body.toggleAttribute("data-ds-dark-theme", desiredDark);
-    }
-  });
+  const themeObserver = new MutationObserver(syncNativeTheme);
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
 
-  installStyle();
+  installStyle(registry);
+  syncNativeTheme();
 
   const apply = async (snapshot: AppearanceSnapshot): Promise<void> => {
     const currentSequence = ++sequence;
     lastSnapshot = snapshot;
     const config = resolveEffectiveAppearance(snapshot);
-    desiredDark = applyTokens(config, media.matches);
+    applyTokens(config);
     const urls = await resolveAssetUrls(config, api);
     if (currentSequence !== sequence) {
       return;
@@ -55,7 +51,6 @@ export function installAppearanceRuntime(
     apply,
     dispose: () => {
       sequence += 1;
-      media.removeEventListener("change", mediaListener);
       themeObserver.disconnect();
       document.getElementById(LAYER_ID)?.remove();
       document.getElementById(STYLE_ID)?.remove();
@@ -65,13 +60,17 @@ export function installAppearanceRuntime(
   };
 }
 
-function installStyle(): void {
+function installStyle(registry: AppearanceProviderRegistry): void {
   if (document.getElementById(STYLE_ID)) {
     return;
   }
   const style = document.createElement("style");
   style.id = STYLE_ID;
+  const legacySettingsRules = registry.legacySettingsSelectors()
+    .map((selector) => `${selector} { display: none !important; }`)
+    .join("\n");
   style.textContent = `
+    ${legacySettingsRules}
     #${LAYER_ID} { position: fixed; inset: 0; z-index: -4; overflow: hidden; pointer-events: none; }
     #${LAYER_ID} .dsh-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0; transform: scale(var(--dsh-bg-scale, 1)); filter: blur(var(--dsh-bg-blur, 0px)); }
     #${LAYER_ID} .dsh-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, var(--dsh-appearance-dim, .08)); }
@@ -102,10 +101,7 @@ function installStyle(): void {
   document.head.append(style);
 }
 
-function applyTokens(config: AppearanceConfig, systemDark: boolean): boolean {
-  const dark = config.mode === "dark" || (config.mode === "system" && systemDark);
-  document.documentElement.style.colorScheme = dark ? "dark" : "light";
-  document.body.toggleAttribute("data-ds-dark-theme", dark);
+function applyTokens(config: AppearanceConfig): void {
   document.body.setAttribute("data-dsh-desktop-appearance", "true");
   for (const [property, value] of Object.entries(appearanceCssVariables(config))) {
     document.body.style.setProperty(property, value);
@@ -115,17 +111,26 @@ function applyTokens(config: AppearanceConfig, systemDark: boolean): boolean {
     || Boolean(config.assets.characterRight)
     || Boolean(config.assets.sidebarDecoration)
     || Boolean(config.assets.composerDecoration);
+  const nativeDark = document.body.hasAttribute("data-ds-dark-theme");
+  const paletteMatchesNative = config.mode !== "system" && (config.mode === "dark") === nativeDark;
+  if (paletteMatchesNative) {
+    setOptionalToken("--dsw-alias-label-primary", config.colors.text);
+  } else {
+    document.body.style.removeProperty("--dsw-alias-label-primary");
+  }
   if (hasVisual) {
     document.body.style.removeProperty("--dsw-alias-bg-base");
     document.body.style.removeProperty("--dsw-alias-bg-layer-1");
     document.body.style.removeProperty("--dsw-specific-sidebar-fill");
-  } else {
+  } else if (paletteMatchesNative) {
     setOptionalToken("--dsw-alias-bg-base", config.colors.surface);
     setOptionalToken("--dsw-alias-bg-layer-1", config.colors.surface);
     setOptionalToken("--dsw-specific-sidebar-fill", config.colors.sidebar);
+  } else {
+    document.body.style.removeProperty("--dsw-alias-bg-base");
+    document.body.style.removeProperty("--dsw-alias-bg-layer-1");
+    document.body.style.removeProperty("--dsw-specific-sidebar-fill");
   }
-  document.getElementById("dsh-desktop-titlebar")?.setAttribute("data-theme", dark ? "dark" : "light");
-  return dark;
 }
 
 async function resolveAssetUrls(

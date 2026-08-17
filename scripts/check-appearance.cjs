@@ -3,6 +3,7 @@ const { writeFileSync } = require("node:fs");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const screenshotPath = process.env.DSH_APPEARANCE_SCREENSHOT;
+const settingsScreenshotPath = process.env.DSH_APPEARANCE_SETTINGS_SCREENSHOT;
 const targetUrl = process.env.DSH_APPEARANCE_TEST_URL;
 const now = "2026-08-17T00:00:00.000Z";
 const config = (mode, surface, sidebar, accent, text) => ({
@@ -28,9 +29,9 @@ let snapshot = {
 };
 
 const clone = () => structuredClone(snapshot);
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.0" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.1" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
-ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.0", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
+ipcMain.handle("desktop:get-update-states", () => ({ desktop: { phase: "up-to-date", currentVersion: "0.8.1", supported: true }, harness: { phase: "up-to-date", currentVersion: "rc.6", supported: true } }));
 ipcMain.handle("desktop:get-plugin-market", () => ({ updated: now, source: "cache", categories: [], plugins: [], installedCount: 0, restartRequired: false, restartSupported: true }));
 ipcMain.handle("desktop:get-appearance", () => clone());
 ipcMain.handle("desktop:update-appearance", (_event, patch) => {
@@ -103,8 +104,66 @@ app.whenReady().then(async () => {
     console.error(JSON.stringify(diagnostic));
     throw error;
   }
+  const legacyWallpaperPickerDisplay = await window.webContents.executeJavaScript(`document.querySelector('.we-picker') ? getComputedStyle(document.querySelector('.we-picker')).display : 'absent'`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-nav]').click()`);
   await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelectorAll('.source-card').length === 3`);
+  const regression = await window.webContents.executeJavaScript(`(() => {
+    const appearanceNav = document.querySelector('[data-dsh-appearance-nav]');
+    const modal = appearanceNav?.closest('[role=dialog]') || appearanceNav?.closest('section') || appearanceNav?.parentElement?.parentElement;
+    const navItems = appearanceNav?.parentElement ? [...appearanceNav.parentElement.children] : [];
+    const root = document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot;
+    const activeNavItems = navItems.filter((element) => {
+      const className = typeof element.className === 'string' ? element.className : '';
+      return element.getAttribute('aria-current') || className.split(/\\s+/).some((token) => token === 'active' || token.endsWith('_active'));
+    });
+    const rect = modal?.getBoundingClientRect();
+    return {
+      activeNavItems: activeNavItems.map((element) => element.textContent?.trim()),
+      modeButtonCount: root ? [...root.querySelectorAll('button')].filter((element) => ['跟随系统', '明亮', '深色'].includes(element.textContent?.trim())).length : -1,
+      modal: rect ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, scrollHeight: modal.scrollHeight, clientHeight: modal.clientHeight } : null,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+  const nativeThemeRegression = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+    document.body.setAttribute('data-ds-dark-theme', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const host = document.querySelector('[data-dsh-appearance-panel]');
+      resolve({ preserved: document.body.hasAttribute('data-ds-dark-theme'), hostColor: host ? getComputedStyle(host).color : '', inlineLabelColor: document.body.style.getPropertyValue('--dsw-alias-label-primary') });
+      document.body.removeAttribute('data-ds-dark-theme');
+    }));
+  })`);
+  const regressionProblems = [];
+  if (regression.activeNavItems.length !== 1 || !regression.activeNavItems[0]?.includes('外观')) regressionProblems.push(`active navigation: ${JSON.stringify(regression.activeNavItems)}`);
+  if (regression.modeButtonCount !== 0) regressionProblems.push(`duplicate display-mode controls: ${regression.modeButtonCount}`);
+  if (!regression.modal || regression.modal.left < 0 || regression.modal.top < 0 || regression.modal.right > regression.viewport.width + 1 || regression.modal.bottom > regression.viewport.height + 1 || regression.modal.scrollHeight > regression.modal.clientHeight + 1) regressionProblems.push(`squeezed modal: ${JSON.stringify(regression.modal)}`);
+  if (legacyWallpaperPickerDisplay !== 'absent' && legacyWallpaperPickerDisplay !== 'none') regressionProblems.push(`legacy Wallpaper picker visible: ${legacyWallpaperPickerDisplay}`);
+  const nativeDarkTextChannels = nativeThemeRegression.hostColor.match(/\d+/g)?.map(Number) ?? [];
+  const nativeDarkTextIsLight = nativeDarkTextChannels.length >= 3
+    && nativeDarkTextChannels.slice(0, 3).every((channel) => channel >= 220);
+  if (!nativeThemeRegression.preserved || !nativeDarkTextIsLight || nativeThemeRegression.inlineLabelColor !== '') regressionProblems.push(`native dark theme not inherited: ${JSON.stringify(nativeThemeRegression)}`);
+  if (regressionProblems.length) throw new Error(`Appearance regression: ${regressionProblems.join('; ')}`);
+  if (settingsScreenshotPath) {
+    window.showInactive();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    writeFileSync(settingsScreenshotPath, (await window.webContents.capturePage()).toPNG());
+  }
+  await window.webContents.executeJavaScript(`(() => {
+    const appearanceNav = document.querySelector('[data-dsh-appearance-nav]');
+    [...appearanceNav.parentElement.children].find((element) => element.textContent?.trim() === '通用设置' || element.textContent?.trim() === 'General')?.click();
+  })()`);
+  await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.hidden === true`);
+  const restoredNavigation = await window.webContents.executeJavaScript(`(() => {
+    const appearanceNav = document.querySelector('[data-dsh-appearance-nav]');
+    const navItems = appearanceNav?.parentElement ? [...appearanceNav.parentElement.children] : [];
+    const active = navItems.filter((element) => {
+      const className = typeof element.className === 'string' ? element.className : '';
+      return element.getAttribute('aria-current') || className.split(/\\s+/).some((token) => token === 'active' || token.endsWith('_active'));
+    });
+    return active.map((element) => element.textContent?.trim());
+  })()`);
+  if (restoredNavigation.length !== 1 || restoredNavigation[0]?.includes('外观')) throw new Error(`Native navigation was not restored: ${JSON.stringify(restoredNavigation)}`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-nav]').click()`);
+  await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.hidden === false`);
   const settings = await window.webContents.executeJavaScript(`(() => { const root = document.querySelector('[data-dsh-appearance-panel]').shadowRoot; return { tabs: [...root.querySelectorAll('[data-page]')].map(x => x.textContent), sources: root.querySelectorAll('.source-card').length, extensions: root.querySelectorAll('.extension-card').length }; })()`);
   if (settings.tabs.join("|") !== "外观设置|我的主题|主题编辑" || settings.sources !== 3 || settings.extensions !== 1) throw new Error(`Unexpected appearance settings: ${JSON.stringify(settings)}`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-panel]').shadowRoot.querySelector('[data-page=themes]').click()`);

@@ -48,7 +48,7 @@ export function appearanceCssVariables(config: AppearanceConfig): Record<string,
     "--dsh-appearance-radius": `${config.effects.radius}px`,
   };
   if (config.colors.text) {
-    variables["--dsw-alias-label-primary"] = config.colors.text;
+    variables["--dsh-appearance-text"] = config.colors.text;
   }
   if (config.colors.surface) {
     variables["--dsh-appearance-surface"] = config.colors.surface;
