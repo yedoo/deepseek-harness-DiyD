@@ -13,6 +13,19 @@ ipcMain.handle("desktop:get-update-states", () => ({
     supported: true,
   },
 }));
+ipcMain.handle("desktop:get-appearance", () => ({
+  settings: {
+    mode: "system",
+    background: { kind: "none" },
+    effects: { dim: .08, blur: 18, panelOpacity: .9, borderAlpha: .18, radius: 18 },
+    colors: {},
+    assets: {},
+    providers: {},
+    overrides: {},
+  },
+  themes: [],
+  providers: [],
+}));
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({

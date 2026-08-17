@@ -46,6 +46,15 @@ import {
   prepareForWorkspaceDialog,
   WorkspaceDialogForegroundWatcher,
 } from "./workspace-dialog-foreground";
+import { AppearanceService } from "./appearance-service";
+import type {
+  AppearanceAssetSlot,
+  AppearanceConfigPatch,
+  AppearanceProviderDescriptor,
+  AppearanceProviderUpdate,
+  AppearanceThemeInput,
+  AppearanceThemePatch,
+} from "../appearance-types";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -66,6 +75,7 @@ let harnessUpdater: HarnessUpdater | undefined;
 let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
 let harnessUpdateCoordinator: HarnessUpdateCoordinator | undefined;
 let pluginMarketService: PluginMarketService | undefined;
+let appearanceService: AppearanceService | undefined;
 let activeHarnessInstallation: HarnessInstallation | undefined;
 let harnessUpdateUnsubscribe: (() => void) | undefined;
 let desktopInitialCheckTimer: NodeJS.Timeout | undefined;
@@ -122,6 +132,7 @@ void app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const userDataRoot = app.getPath("userData");
   settingsStore = new DesktopSettingsStore(path.join(userDataRoot, "settings.json"));
+  appearanceService = new AppearanceService(path.join(userDataRoot, "appearance"));
   harnessRuntimeInstaller = new HarnessRuntimeInstaller(
     path.join(userDataRoot, "harness-runtime"),
     new ArboristHarnessPackageInstaller({
@@ -662,6 +673,123 @@ function registerDesktopIpc(): void {
     mkdirSync(logsRoot, { recursive: true });
     return shell.openPath(logsRoot);
   });
+  ipcMain.handle("desktop:get-appearance", async () => {
+    if (!appearanceService) {
+      throw new Error("外观服务尚未初始化");
+    }
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:update-appearance", async (_event, patch: unknown) => {
+    if (!appearanceService || !patch || typeof patch !== "object") {
+      throw new Error("外观设置请求无效");
+    }
+    appearanceService.updateSettings(patch as AppearanceConfigPatch);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:select-appearance-asset", async (event, slot: unknown) => {
+    if (!appearanceService || !isAppearanceAssetSlot(slot)) {
+      throw new Error("外观资源位置无效");
+    }
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error("桌面窗口已经关闭");
+    }
+    const result = await dialog.showOpenDialog(window, {
+      title: appearanceAssetDialogTitle(slot),
+      properties: ["openFile"],
+      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "avif"] }],
+    });
+    if (result.canceled || result.filePaths.length !== 1) {
+      return undefined;
+    }
+    const asset = appearanceService.importLocalAsset(result.filePaths[0]!, slot);
+    return { asset, snapshot: appearanceService.snapshot(await discoverAppearanceProviders()) };
+  });
+  ipcMain.handle("desktop:get-appearance-asset", (_event, assetId: unknown) => {
+    if (!appearanceService || typeof assetId !== "string") {
+      throw new Error("外观资源请求无效");
+    }
+    return appearanceService.readAsset(assetId);
+  });
+  ipcMain.handle("desktop:create-appearance-theme", async (_event, input: unknown) => {
+    if (!appearanceService || !input || typeof input !== "object") {
+      throw new Error("主题创建请求无效");
+    }
+    appearanceService.createTheme(input as AppearanceThemeInput);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:duplicate-appearance-theme", async (_event, themeId: unknown) => {
+    if (!appearanceService || typeof themeId !== "string") {
+      throw new Error("主题复制请求无效");
+    }
+    appearanceService.duplicateTheme(themeId);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:update-appearance-theme", async (_event, themeId: unknown, patch: unknown) => {
+    if (!appearanceService || typeof themeId !== "string" || !patch || typeof patch !== "object") {
+      throw new Error("主题编辑请求无效");
+    }
+    appearanceService.updateTheme(themeId, patch as AppearanceThemePatch);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:delete-appearance-theme", async (_event, themeId: unknown) => {
+    if (!appearanceService || typeof themeId !== "string") {
+      throw new Error("主题删除请求无效");
+    }
+    appearanceService.deleteTheme(themeId);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:apply-appearance-theme", async (_event, themeId: unknown) => {
+    if (!appearanceService || typeof themeId !== "string") {
+      throw new Error("主题应用请求无效");
+    }
+    appearanceService.applyTheme(themeId);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:update-appearance-provider", async (_event, providerId: unknown, update: unknown) => {
+    if (!appearanceService || typeof providerId !== "string" || !update || typeof update !== "object") {
+      throw new Error("外观扩展请求无效");
+    }
+    appearanceService.updateProvider(providerId, update as AppearanceProviderUpdate);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:import-appearance-theme", async (event) => {
+    if (!appearanceService) {
+      throw new Error("外观服务尚未初始化");
+    }
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error("桌面窗口已经关闭");
+    }
+    const result = await dialog.showOpenDialog(window, {
+      title: "导入 DSH 主题包",
+      properties: ["openFile"],
+      filters: [{ name: "DSH 主题包", extensions: ["dsh-theme"] }],
+    });
+    if (result.canceled || result.filePaths.length !== 1) {
+      return undefined;
+    }
+    appearanceService.importTheme(result.filePaths[0]!);
+    return appearanceService.snapshot(await discoverAppearanceProviders());
+  });
+  ipcMain.handle("desktop:export-appearance-theme", async (event, themeId: unknown) => {
+    if (!appearanceService || typeof themeId !== "string") {
+      throw new Error("主题导出请求无效");
+    }
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error("桌面窗口已经关闭");
+    }
+    const result = await dialog.showSaveDialog(window, {
+      title: "导出 DSH 主题包",
+      defaultPath: "theme.dsh-theme",
+      filters: [{ name: "DSH 主题包", extensions: ["dsh-theme"] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return undefined;
+    }
+    return appearanceService.exportTheme(themeId, result.filePath);
+  });
   ipcMain.handle("desktop:get-plugin-market", (_event, forceRefresh: unknown) => {
     if (!pluginMarketService) {
       throw new Error("插件市场尚未初始化");
@@ -759,4 +887,52 @@ function registerDesktopIpc(): void {
     await harnessUpdater?.install();
     return harnessStateForRenderer();
   });
+}
+
+async function discoverAppearanceProviders(): Promise<AppearanceProviderDescriptor[]> {
+  const providers: AppearanceProviderDescriptor[] = [];
+  try {
+    const market = await pluginMarketService?.list(false);
+    const wallpaper = market?.plugins.find((plugin) => (
+      plugin.installed
+      && (plugin.dependencyName === "dsh-plugin-wallpaper-engine"
+        || plugin.name === "dsh-plugin-wallpaper-engine")
+    ));
+    if (wallpaper) {
+      providers.push({
+        id: "wallpaper-engine",
+        name: "Wallpaper Engine",
+        kind: "background",
+        source: "plugin",
+        available: wallpaper.enabled,
+        description: "使用 Wallpaper Engine 的视频与网页壁纸",
+        capabilities: ["inventory", "video", "web-wallpaper", "playback", "effects"],
+      });
+    }
+  } catch {
+    // 外观设置不能因为插件目录暂时不可用而失效。
+  }
+  return providers;
+}
+
+function isAppearanceAssetSlot(value: unknown): value is AppearanceAssetSlot {
+  return [
+    "background",
+    "characterLeft",
+    "characterRight",
+    "sidebarDecoration",
+    "composerDecoration",
+    "preview",
+  ].includes(String(value));
+}
+
+function appearanceAssetDialogTitle(slot: AppearanceAssetSlot): string {
+  return {
+    background: "选择背景图",
+    characterLeft: "选择左侧人物立绘",
+    characterRight: "选择右侧人物立绘",
+    sidebarDecoration: "选择侧边栏装饰",
+    composerDecoration: "选择输入框装饰",
+    preview: "选择主题预览图",
+  }[slot];
 }

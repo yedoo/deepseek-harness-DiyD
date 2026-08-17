@@ -107,6 +107,19 @@ ipcMain.handle("desktop:get-update-states", () => ({
   desktop: { phase: "up-to-date", currentVersion: "0.6.2", supported: true },
   harness: { phase: "up-to-date", currentVersion: "0.1.0-rc.6", supported: true },
 }));
+ipcMain.handle("desktop:get-appearance", () => ({
+  settings: {
+    mode: "system",
+    background: { kind: "none" },
+    effects: { dim: .08, blur: 18, panelOpacity: .9, borderAlpha: .18, radius: 18 },
+    colors: {},
+    assets: {},
+    providers: {},
+    overrides: {},
+  },
+  themes: [],
+  providers: [],
+}));
 ipcMain.handle("desktop:get-plugin-market", () => snapshot);
 ipcMain.handle("desktop:search-plugins", (_event, query) => ({
   query,
