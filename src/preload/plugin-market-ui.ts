@@ -18,6 +18,7 @@ export interface PluginMarketDesktopApi {
   searchPlugins(query: string): Promise<PluginMarketSearchResult>;
   installPlugin(pluginId: string): Promise<PluginMarketOperationResult>;
   removePlugin(pluginId: string): Promise<PluginMarketOperationResult>;
+  setPluginEnabled(pluginId: string, enabled: boolean): Promise<PluginMarketOperationResult>;
   restartHarnessForPlugins(): Promise<boolean>;
   openPluginSource(url: string): Promise<boolean>;
   openLogs(): Promise<string>;
@@ -234,7 +235,7 @@ function marketplaceStyles(): string {
     .badge[data-review="curated"] { color: #287347; background: #edf8f1; }
     .badge[data-review="community"] { color: #9a6815; background: #fff6e5; }
     .actions { display: flex; align-items: center; gap: 8px; }
-    .install, .remove {
+    .install, .remove, .toggle {
       min-width: 62px;
       height: 31px;
       padding: 0 11px;
@@ -245,8 +246,11 @@ function marketplaceStyles(): string {
     .install:hover { background: #f4f8ff; }
     .remove { border: 0; color: #777780; background: #f2f2f4; }
     .remove:hover { color: #b42323; background: #fff0f0; }
-    .install:disabled, .remove:disabled { cursor: default; opacity: .55; }
+    .toggle { border: 1px solid #dedfe3; color: #52525b; background: #fff; }
+    .toggle:hover { border-color: #bfc2c8; background: #f7f7f8; }
+    .install:disabled, .remove:disabled, .toggle:disabled { cursor: default; opacity: .55; }
     .installed { color: #219653; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .installed[data-enabled="false"] { color: #777780; }
     .empty, .loading {
       display: grid;
       place-items: center;
@@ -299,6 +303,7 @@ function marketplaceStyles(): string {
       .avatar { border-color: #45454b; background: #333338; }
       .title { color: #f4f4f5; }
       .badge, .remove, .command { color: #c0c0c5; background: #39393e; }
+      .toggle { border-color: #4a4a50; color: #d4d4d8; background: transparent; }
       .badge[data-review="curated"] { color: #8bd6aa; background: #263b30; }
       .badge[data-review="community"] { color: #e7bb67; background: #45371f; }
       .install { color: #8db3ff; background: transparent; }
@@ -447,7 +452,9 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
       return;
     }
     const combined = state.query.trim()
-      ? [...state.snapshot.plugins, ...state.onlinePlugins]
+      ? [...new Map(
+        [...state.onlinePlugins, ...state.snapshot.plugins].map((plugin) => [plugin.id, plugin]),
+      ).values()]
       : state.snapshot.plugins;
     const plugins = filterPluginMarketEntries(
       combined,
@@ -531,14 +538,26 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
     const busy = state.busyPluginId === plugin.id;
     if (plugin.installed) {
       const installed = createElement("span", "installed");
-      installed.textContent = "已安装";
+      installed.dataset.enabled = String(plugin.enabled);
+      installed.textContent = plugin.enabled ? "已启用" : "已停用";
+      if (plugin.canToggle) {
+        const toggle = button(
+          busy ? `${plugin.enabled ? "停用" : "启用"}中…` : plugin.enabled ? "停用" : "启用",
+          "toggle",
+        );
+        toggle.disabled = Boolean(state.busyPluginId);
+        toggle.addEventListener("click", () => void performToggle(plugin, !plugin.enabled));
+        actions.append(installed, toggle);
+      } else {
+        actions.append(installed);
+      }
       const remove = button(busy ? "卸载中…" : "卸载", "remove");
       remove.disabled = Boolean(state.busyPluginId);
       remove.addEventListener("click", () => {
         state.confirming = { plugin, operation: "remove" };
         render();
       });
-      actions.append(installed, remove);
+      actions.append(remove);
     } else {
       const install = button(busy ? "安装中…" : "安装", "install");
       install.disabled = Boolean(state.busyPluginId);
@@ -613,6 +632,39 @@ function createMarketplacePanel(api: PluginMarketDesktopApi): HTMLElement {
       const result = operation === "install"
         ? await api.installPlugin(plugin.id)
         : await api.removePlugin(plugin.id);
+      state.snapshot = result.snapshot;
+      if (result.plugin) {
+        state.onlinePlugins = state.onlinePlugins.map((entry) =>
+          entry.id === result.plugin?.id ? result.plugin : entry);
+      }
+      state.notice = {
+        tone: "success",
+        message: result.message,
+        restartSupported: result.restartSupported,
+      };
+    } catch (error) {
+      state.notice = {
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      state.busyPluginId = undefined;
+      render();
+    }
+  };
+
+  const performToggle = async (
+    plugin: PluginMarketEntry,
+    enabled: boolean,
+  ): Promise<void> => {
+    state.busyPluginId = plugin.id;
+    state.notice = {
+      tone: "info",
+      message: `正在${enabled ? "启用" : "停用"} ${displayPluginName(plugin)}…`,
+    };
+    render();
+    try {
+      const result = await api.setPluginEnabled(plugin.id, enabled);
       state.snapshot = result.snapshot;
       if (result.plugin) {
         state.onlinePlugins = state.onlinePlugins.map((entry) =>

@@ -686,6 +686,15 @@ function registerDesktopIpc(): void {
     }
     return pluginMarketService.remove(pluginId);
   });
+  ipcMain.handle(
+    "desktop:set-plugin-enabled",
+    (_event, pluginId: unknown, enabled: unknown) => {
+      if (!pluginMarketService || typeof pluginId !== "string" || typeof enabled !== "boolean") {
+        throw new Error("插件启停请求无效");
+      }
+      return pluginMarketService.setEnabled(pluginId, enabled);
+    },
+  );
   ipcMain.handle("desktop:restart-harness-for-plugins", async () => {
     const service = harnessService;
     if (!service || !pluginMarketService) {

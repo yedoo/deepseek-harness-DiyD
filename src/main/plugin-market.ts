@@ -16,7 +16,10 @@ import type {
   PluginMarketSnapshot,
 } from "../plugin-market-types";
 import {
+  inferPluginCategory,
+  inspectDshPluginManifest,
   NetworkPluginDiscovery,
+  normalizeGithubRepository,
   type PluginDiscoveryProvider,
 } from "./plugin-discovery";
 import { RESULT_PREFIX, type PluginPackageOperationResult } from "./plugin-package-worker";
@@ -45,6 +48,14 @@ interface RegistryCatalog {
 
 interface ProfileManifest {
   dependencies?: Record<string, string>;
+  dsh?: {
+    profile?: {
+      bundles?: string[];
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 interface PluginMarketState {
@@ -231,6 +242,74 @@ function readProfileManifest(profileDirectory: string): ProfileManifest {
   } catch {
     return {};
   }
+}
+
+function profileBundles(manifest: ProfileManifest): string[] {
+  return Array.isArray(manifest.dsh?.profile?.bundles)
+    ? manifest.dsh.profile.bundles.filter((bundle): bundle is string => typeof bundle === "string")
+    : [];
+}
+
+function readInstalledPackageManifest(
+  profileDirectory: string,
+  dependencyName: string,
+): Record<string, unknown> | undefined {
+  if (
+    dependencyName.toLocaleLowerCase().startsWith("@deepseek-ai/")
+    || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(dependencyName)
+  ) {
+    return undefined;
+  }
+  const manifestPath = path.join(profileDirectory, "node_modules", dependencyName, "package.json");
+  if (!existsSync(manifestPath)) {
+    return undefined;
+  }
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as unknown;
+    return isRecord(manifest) && manifest.name === dependencyName ? manifest : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function packageOwner(repositoryUrl: string): string | undefined {
+  return repositorySlug(repositoryUrl)?.split("/")[0];
+}
+
+function installedPluginId(
+  dependencyName: string,
+  dependencySpec: string,
+  repositoryUrl: string,
+  state: PluginMarketState,
+): string {
+  const remembered = Object.entries(state.installed)
+    .find(([, dependency]) => dependency === dependencyName)?.[0];
+  if (remembered) {
+    return remembered;
+  }
+  const slug = repositorySlugFromSpec(dependencySpec) ?? repositorySlug(repositoryUrl);
+  return repositorySlugFromSpec(dependencySpec) && slug
+    ? `github:${slug}`
+    : `npm:${dependencyName.toLocaleLowerCase()}`;
+}
+
+function setProfileBundleEnabled(
+  profileDirectory: string,
+  dependencyName: string,
+  enabled: boolean,
+): void {
+  const manifest = readProfileManifest(profileDirectory);
+  if (!Object.hasOwn(manifest.dependencies ?? {}, dependencyName)) {
+    throw new Error("没有找到这个插件的已安装依赖");
+  }
+  const bundles = profileBundles(manifest).filter((bundle) => bundle !== dependencyName);
+  if (enabled) {
+    bundles.push(dependencyName);
+  }
+  manifest.dsh = isRecord(manifest.dsh) ? manifest.dsh : {};
+  manifest.dsh.profile = isRecord(manifest.dsh.profile) ? manifest.dsh.profile : {};
+  manifest.dsh.profile.bundles = bundles;
+  writeJsonAtomic(path.join(profileDirectory, "package.json"), manifest);
 }
 
 export function findInstalledDependency(
@@ -420,7 +499,7 @@ export class PluginMarketService {
       return packageName ? [packageName.toLocaleLowerCase()] : [];
     }));
     const profileDirectory = this.profileDirectory();
-    const dependencies = readProfileManifest(profileDirectory).dependencies ?? {};
+    const profile = readProfileManifest(profileDirectory);
     const state = readState(this.options.statePath);
     const plugins = result.plugins
       .filter((entry) => {
@@ -430,7 +509,7 @@ export class PluginMarketService {
         return !(slug && catalogRepositories.has(slug))
           && !(packageName && catalogPackages.has(packageName.toLocaleLowerCase()));
       })
-      .map((entry) => this.withInstallState(entry, dependencies, state));
+      .map((entry) => this.withInstallState(entry, profileDirectory, profile, state));
     if (this.discovered.size > 200) {
       this.discovered.clear();
     }
@@ -443,6 +522,7 @@ export class PluginMarketService {
   async install(pluginId: string): Promise<PluginMarketOperationResult> {
     return this.runExclusive(async () => {
       const catalog = await this.loadCatalog(false);
+      this.snapshot(catalog);
       const discovered = this.discovered.get(pluginId);
       const plugin = catalog.plugins.find((entry) => entry.url === pluginId)
         ?? (discovered ? registryPluginFromEntry(discovered) : undefined);
@@ -466,13 +546,20 @@ export class PluginMarketService {
       state.installed[stateKey] = remembered;
       state.restartRequired = true;
       writeJsonAtomic(this.options.statePath, state);
+      const snapshot = this.snapshot(catalog);
       const operationResult: PluginMarketOperationResult = {
-        snapshot: this.snapshot(catalog),
+        snapshot,
         message: "安装完成，重启 Harness 后生效",
         restartSupported: this.options.restartSupported(),
       };
       if (discovered) {
-        const installedEntry = this.withInstallState(discovered, result.dependencies, state);
+        const installedEntry = snapshot.plugins.find((entry) => entry.id === discovered.id)
+          ?? this.withInstallState(
+            discovered,
+            profileDirectory,
+            readProfileManifest(profileDirectory),
+            state,
+          );
         this.discovered.set(discovered.id, installedEntry);
         operationResult.plugin = installedEntry;
       }
@@ -483,6 +570,7 @@ export class PluginMarketService {
   async remove(pluginId: string): Promise<PluginMarketOperationResult> {
     return this.runExclusive(async () => {
       const catalog = await this.loadCatalog(false);
+      this.snapshot(catalog);
       const discovered = this.discovered.get(pluginId);
       const plugin = catalog.plugins.find((entry) => entry.url === pluginId)
         ?? (discovered ? registryPluginFromEntry(discovered) : undefined);
@@ -501,17 +589,54 @@ export class PluginMarketService {
       delete state.installed[stateKey];
       state.restartRequired = true;
       writeJsonAtomic(this.options.statePath, state);
+      const snapshot = this.snapshot(catalog);
       const operationResult: PluginMarketOperationResult = {
-        snapshot: this.snapshot(catalog),
+        snapshot,
         message: "卸载完成，重启 Harness 后生效",
         restartSupported: this.options.restartSupported(),
       };
       if (discovered) {
-        const removedEntry = this.withInstallState(discovered, {}, state);
+        const removedEntry = this.withInstallState(
+          discovered,
+          profileDirectory,
+          readProfileManifest(profileDirectory),
+          state,
+        );
         this.discovered.set(discovered.id, removedEntry);
         operationResult.plugin = removedEntry;
       }
       return operationResult;
+    });
+  }
+
+  async setEnabled(pluginId: string, enabled: boolean): Promise<PluginMarketOperationResult> {
+    return this.runExclusive(async () => {
+      const catalog = await this.loadCatalog(false);
+      const current = this.snapshot(catalog).plugins.find((entry) => entry.id === pluginId)
+        ?? this.discovered.get(pluginId);
+      if (!current?.installed || !current.dependencyName) {
+        throw new Error("没有找到这个插件的已安装依赖");
+      }
+      if (!current.canToggle) {
+        throw new Error("这个插件不支持独立停用");
+      }
+      const profileDirectory = this.profileDirectory();
+      setProfileBundleEnabled(profileDirectory, current.dependencyName, enabled);
+      const state = readState(this.options.statePath);
+      state.restartRequired = true;
+      writeJsonAtomic(this.options.statePath, state);
+      const snapshot = this.snapshot(catalog);
+      const updated = snapshot.plugins.find((entry) => entry.id === pluginId);
+      if (!updated) {
+        throw new Error("插件状态已经更新，但未能刷新插件列表");
+      }
+      this.discovered.set(updated.id, updated);
+      return {
+        snapshot,
+        plugin: updated,
+        message: `${enabled ? "启用" : "停用"}完成，重启 Harness 后生效`,
+        restartSupported: this.options.restartSupported(),
+      };
     });
   }
 
@@ -582,7 +707,9 @@ export class PluginMarketService {
 
   private snapshot(catalog: RegistryCatalog): PluginMarketSnapshot {
     const profileDirectory = this.profileDirectory();
-    const dependencies = readProfileManifest(profileDirectory).dependencies ?? {};
+    const profile = readProfileManifest(profileDirectory);
+    const dependencies = profile.dependencies ?? {};
+    const bundles = profileBundles(profile);
     const state = readState(this.options.statePath);
     const plugins: PluginMarketEntry[] = catalog.plugins
       .filter((plugin) => plugin.url !== "https://github.com/dsh-market/dsh-market")
@@ -592,6 +719,11 @@ export class PluginMarketService {
           dependencies,
           state.installed[plugin.url],
         );
+        const packageManifest = dependencyName
+          ? readInstalledPackageManifest(profileDirectory, dependencyName)
+          : undefined;
+        const inspection = inspectDshPluginManifest(packageManifest);
+        const canToggle = dependencyName !== undefined && inspection.hasBundle;
         return {
           id: plugin.url,
           name: plugin.name,
@@ -603,11 +735,63 @@ export class PluginMarketService {
           installCommand: plugin.install,
           ...(plugin.added ? { added: plugin.added } : {}),
           installed: dependencyName !== undefined,
+          enabled: dependencyName !== undefined && (!canToggle || bundles.includes(dependencyName)),
+          canToggle,
           ...(dependencyName ? { dependencyName } : {}),
           source: "catalog",
           reviewStatus: "curated",
         };
       });
+    const representedDependencies = new Set(
+      plugins.flatMap((plugin) => plugin.dependencyName ? [plugin.dependencyName] : []),
+    );
+    const representedPackages = new Set(catalog.plugins.flatMap((plugin) => {
+      const spec = parseInstallSpec(plugin.install);
+      const packageName = plugin.npm ?? (spec ? registryPackageName(spec) : undefined);
+      return packageName ? [packageName] : [];
+    }));
+    for (const [dependencyName, spec] of Object.entries(dependencies)) {
+      if (representedDependencies.has(dependencyName) || representedPackages.has(dependencyName)) {
+        continue;
+      }
+      const packageManifest = readInstalledPackageManifest(profileDirectory, dependencyName);
+      const inspection = inspectDshPluginManifest(packageManifest);
+      if (!packageManifest || !inspection.compatible) {
+        continue;
+      }
+      const url = normalizeGithubRepository(packageManifest.repository)
+        ?? normalizeGithubRepository(packageManifest.homepage);
+      const owner = url ? packageOwner(url) : undefined;
+      if (!url || !owner) {
+        continue;
+      }
+      const id = installedPluginId(dependencyName, spec, url, state);
+      const source: PluginMarketEntry["source"] = id.startsWith("github:") ? "github" : "npm";
+      const entry: PluginMarketEntry = {
+        id,
+        name: typeof packageManifest.name === "string" ? packageManifest.name : dependencyName,
+        owner,
+        url,
+        category: inferPluginCategory(packageManifest),
+        description: typeof packageManifest.description === "string"
+          ? packageManifest.description
+          : "本机已安装的 DSH 社区插件",
+        stars: 0,
+        installCommand: `dsh plugin --profile web add ${
+          source === "github" && repositorySlugFromSpec(spec) ? spec : dependencyName
+        }`,
+        installed: true,
+        enabled: !inspection.hasBundle || bundles.includes(dependencyName),
+        canToggle: inspection.hasBundle,
+        dependencyName,
+        source,
+        reviewStatus: "community",
+        ...(typeof packageManifest.version === "string" ? { version: packageManifest.version } : {}),
+        ...(inspection.installScripts.length > 0 ? { installScripts: inspection.installScripts } : {}),
+      };
+      plugins.push(entry);
+      this.discovered.set(entry.id, entry);
+    }
     return {
       updated: catalog.updated,
       source: this.catalogSource,
@@ -621,15 +805,25 @@ export class PluginMarketService {
 
   private withInstallState(
     entry: PluginMarketEntry,
-    dependencies: Record<string, string>,
+    profileDirectory: string,
+    profile: ProfileManifest,
     state: PluginMarketState,
   ): PluginMarketEntry {
     const plugin = registryPluginFromEntry(entry);
+    const dependencies = profile.dependencies ?? {};
     const dependencyName = findInstalledDependency(plugin, dependencies, state.installed[entry.id]);
+    const packageManifest = dependencyName
+      ? readInstalledPackageManifest(profileDirectory, dependencyName)
+      : undefined;
+    const inspection = inspectDshPluginManifest(packageManifest);
+    const canToggle = dependencyName !== undefined && inspection.hasBundle;
     const { dependencyName: _previousDependencyName, ...base } = entry;
     return {
       ...base,
       installed: dependencyName !== undefined,
+      enabled: dependencyName !== undefined
+        && (!canToggle || profileBundles(profile).includes(dependencyName)),
+      canToggle,
       ...(dependencyName ? { dependencyName } : {}),
     };
   }

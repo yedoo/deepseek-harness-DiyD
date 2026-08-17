@@ -12,6 +12,7 @@ function plugin(
   category: string,
   stars: number,
   description = "",
+  installed = false,
 ): PluginMarketEntry {
   return {
     id: `https://github.com/example/${name}`,
@@ -22,7 +23,9 @@ function plugin(
     description,
     stars,
     installCommand: `dsh plugin --profile web add ${name}`,
-    installed: false,
+    installed,
+    enabled: installed,
+    canToggle: installed,
     source: "catalog",
     reviewStatus: "curated",
   };
@@ -55,6 +58,19 @@ describe("plugin market presentation", () => {
       filterPluginMarketEntries(entries, "BROWSER", "featured", "popular")
         .map((entry) => entry.name),
     ).toEqual(["dsh-browser"]);
+  });
+
+  it("has a dedicated installed category that works without a search query", () => {
+    const entries = [
+      plugin("dsh-plugin-wallpaper-engine", "theme", 18, "动态壁纸", true),
+      plugin("modlens", "vision", 2_478, "视觉反馈"),
+    ];
+
+    expect(PLUGIN_MARKET_CATEGORIES[0]).toEqual({ id: "installed", label: "已安装" });
+    expect(
+      filterPluginMarketEntries(entries, "", "installed", "popular")
+        .map((entry) => entry.name),
+    ).toEqual(["dsh-plugin-wallpaper-engine"]);
   });
 
   it("searches the whole catalog even when a category tab is selected", () => {

@@ -78,6 +78,28 @@ function writeProfile(dataRoot: string, dependencies: Record<string, string> = {
   return profile;
 }
 
+function writeInstalledDshPlugin(
+  profile: string,
+  name = "dsh-plugin-wallpaper-engine",
+): void {
+  const packageRoot = path.join(profile, "node_modules", name);
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(
+    path.join(packageRoot, "package.json"),
+    `${JSON.stringify({
+      name,
+      version: "0.1.3",
+      description: "Wallpaper Engine backgrounds for DeepSeek Harness",
+      repository: "https://github.com/elysia395/dsh-wallpaper-engine",
+      keywords: ["dsh", "wallpaper", "theme"],
+      dsh: {
+        bundle: { patch: "./cordis.patch.yml" },
+        client: { platform: "web" },
+      },
+    }, null, 2)}\n`,
+  );
+}
+
 describe("plugin market catalog", () => {
   it("accepts curated GitHub entries and rejects arbitrary install arguments", () => {
     const parsed = parseRegistryCatalog(catalog());
@@ -128,6 +150,62 @@ describe("plugin market catalog", () => {
 });
 
 describe("PluginMarketService", () => {
+  it("recovers installed community plugins on startup and can disable or enable them without uninstalling", async () => {
+    const root = temporaryRoot();
+    const dataRoot = path.join(root, "data");
+    const profile = writeProfile(dataRoot, { "dsh-plugin-wallpaper-engine": "^0.1.3" });
+    writeInstalledDshPlugin(profile);
+    const manifestPath = path.join(profile, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    manifest.dsh.profile.bundles.push("dsh-plugin-wallpaper-engine");
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const statePath = path.join(root, "market", "state.json");
+    mkdirSync(path.dirname(statePath), { recursive: true });
+    writeFileSync(statePath, `${JSON.stringify({
+      installed: { "npm:dsh-plugin-wallpaper-engine": "dsh-plugin-wallpaper-engine" },
+      restartRequired: false,
+    }, null, 2)}\n`);
+    const options = {
+      dataRoot: () => dataRoot,
+      cacheDirectory: path.join(root, "market"),
+      statePath,
+      catalogCachePath: path.join(root, "market", "catalog.json"),
+      packageInstaller: { run: async () => { throw new Error("toggle must not run npm"); } },
+      restartSupported: () => true,
+      fetchCatalog: async () => catalog(),
+    } satisfies ConstructorParameters<typeof PluginMarketService>[0];
+    const service = new PluginMarketService(options);
+
+    const initial = await service.list();
+    const installed = initial.plugins.find((entry) => entry.id === "npm:dsh-plugin-wallpaper-engine");
+    expect(installed).toMatchObject({
+      installed: true,
+      enabled: true,
+      canToggle: true,
+      dependencyName: "dsh-plugin-wallpaper-engine",
+    });
+
+    const disabled = await service.setEnabled("npm:dsh-plugin-wallpaper-engine", false);
+    expect(disabled.plugin).toMatchObject({ installed: true, enabled: false, canToggle: true });
+    let updatedManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    expect(updatedManifest.dependencies["dsh-plugin-wallpaper-engine"]).toBe("^0.1.3");
+    expect(updatedManifest.dsh.profile.bundles).not.toContain("dsh-plugin-wallpaper-engine");
+
+    const reloaded = new PluginMarketService(options);
+    expect(
+      (await reloaded.list()).plugins.find((entry) => entry.id === "npm:dsh-plugin-wallpaper-engine"),
+    ).toMatchObject({ installed: true, enabled: false, canToggle: true });
+
+    const enabled = await reloaded.setEnabled("npm:dsh-plugin-wallpaper-engine", true);
+    expect(enabled.plugin).toMatchObject({ installed: true, enabled: true, canToggle: true });
+    updatedManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    expect(
+      updatedManifest.dsh.profile.bundles.filter(
+        (bundle: string) => bundle === "dsh-plugin-wallpaper-engine",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("loads the live schema, marks installed plugins, and persists install state", async () => {
     const root = temporaryRoot();
     const dataRoot = path.join(root, "data");
@@ -182,6 +260,8 @@ describe("PluginMarketService", () => {
       stars: 18,
       installCommand: "dsh plugin --profile web add dsh-plugin-wallpaper-engine",
       installed: false,
+      enabled: false,
+      canToggle: false,
       source: "npm" as const,
       reviewStatus: "community" as const,
       version: "0.1.3",

@@ -37,6 +37,8 @@ const desktopBridge = {
     ipcRenderer.invoke("desktop:install-plugin", pluginId),
   removePlugin: (pluginId: string): Promise<PluginMarketOperationResult> =>
     ipcRenderer.invoke("desktop:remove-plugin", pluginId),
+  setPluginEnabled: (pluginId: string, enabled: boolean): Promise<PluginMarketOperationResult> =>
+    ipcRenderer.invoke("desktop:set-plugin-enabled", pluginId, enabled),
   restartHarnessForPlugins: (): Promise<boolean> =>
     ipcRenderer.invoke("desktop:restart-harness-for-plugins"),
   openPluginSource: (url: string): Promise<boolean> =>
