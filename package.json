@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "0.8.8",
+  "version": "0.9.0",
   "private": true,
   "author": "yedoo",
   "description": "A minimal, frameless desktop host for DeepSeek Harness.",
@@ -21,6 +21,7 @@
     "test:titlebar": "electron scripts/check-titlebar.cjs",
     "test:market-ui": "electron scripts/check-plugin-market.cjs",
     "test:appearance-ui": "electron scripts/check-appearance.cjs",
+    "test:skills-ui": "electron scripts/check-skills.cjs",
     "test:packaged-native": "electron scripts/check-packaged-native.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pack": "npm run build && electron-builder --dir",
