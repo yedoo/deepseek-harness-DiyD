@@ -5,30 +5,26 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const screenshotPath = process.env.DSH_APPEARANCE_SCREENSHOT;
 const settingsScreenshotPath = process.env.DSH_APPEARANCE_SETTINGS_SCREENSHOT;
 const nativeScreenshotPath = process.env.DSH_APPEARANCE_NATIVE_SCREENSHOT;
+const themesScreenshotPath = process.env.DSH_APPEARANCE_THEMES_SCREENSHOT;
 const targetUrl = process.env.DSH_APPEARANCE_TEST_URL;
 const testWidth = Number(process.env.DSH_APPEARANCE_TEST_WIDTH || 1752);
 const testHeight = Number(process.env.DSH_APPEARANCE_TEST_HEIGHT || 1128);
 const now = "2026-08-17T00:00:00.000Z";
-const config = (mode, surface, sidebar, accent, text) => ({
-  mode,
+const config = () => ({
+  mode: "system",
   background: { kind: "none" },
   effects: { dim: .08, blur: 18, panelOpacity: .9, borderAlpha: .18, radius: 18 },
-  colors: { surface, sidebar, accent, text },
+  colors: {},
   assets: {},
 });
 let snapshot = {
   settings: {
-    ...config("light", "#ffffff", "#f7f8fa", "#3b82f6", "#18181b"),
+    ...config(),
     background: { kind: "provider", providerId: "wallpaper-engine" },
-    activeThemeId: "builtin-light",
     providers: { "wallpaper-engine": { enabled: true, settings: {} } },
     overrides: { background: { kind: "provider", providerId: "wallpaper-engine" } },
   },
-  themes: [
-    { id: "builtin-light", name: "简洁明亮", author: "DeepSeek Harness Desktop", version: "1.0.0", kind: "builtin", createdAt: now, updatedAt: now, config: config("light", "#ffffff", "#f7f8fa", "#3b82f6", "#18181b") },
-    { id: "builtin-dark", name: "深色工作台", author: "DeepSeek Harness Desktop", version: "1.0.0", kind: "builtin", createdAt: now, updatedAt: now, config: config("dark", "#1b1c20", "#15161a", "#7aa2ff", "#f4f4f5") },
-    { id: "builtin-deep-sea", name: "深海蓝", author: "DeepSeek Harness Desktop", version: "1.0.0", kind: "builtin", createdAt: now, updatedAt: now, config: config("dark", "#10182b", "#0b1222", "#77aaff", "#eef4ff") },
-  ],
+  themes: [],
   providers: [{ id: "wallpaper-engine", name: "Wallpaper Engine", kind: "background", source: "plugin", available: true, description: "使用 Wallpaper Engine 的视频与网页壁纸", capabilities: ["inventory", "video"] }],
 };
 
@@ -397,6 +393,29 @@ app.whenReady().then(async () => {
     || nativeThemeRegression.sidebarBorder.color === 'transparent'
     || (sidebarBorderChannels.length === 4 && sidebarBorderChannels[3] === 0);
   if (!sidebarBorderTransparent) regressionProblems.push(`wallpaper sidebar divider is visible: ${JSON.stringify(nativeThemeRegression.sidebarBorder)}`);
+  const darkAppearanceControls = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+    const originallyDark = document.body.hasAttribute('data-ds-dark-theme');
+    document.body.setAttribute('data-ds-dark-theme', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const root = document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot;
+      const providerPanel = root?.querySelector('.provider-panel');
+      const providerSelect = root?.querySelector('[data-provider-select]');
+      const panelRect = providerPanel?.getBoundingClientRect();
+      const selectRect = providerSelect?.getBoundingClientRect();
+      const selectStyle = providerSelect ? getComputedStyle(providerSelect) : null;
+      resolve({
+        present: Boolean(providerSelect),
+        selectBackground: selectStyle?.backgroundColor ?? '',
+        selectColor: selectStyle?.color ?? '',
+        selectRight: selectRect?.right ?? -1,
+        panelRight: panelRect?.right ?? -1,
+        fitsPanel: Boolean(selectRect && panelRect && selectRect.right <= panelRect.right + 1 && selectRect.left >= panelRect.left - 1),
+      });
+      if (!originallyDark) document.body.removeAttribute('data-ds-dark-theme');
+    }));
+  })`);
+  const darkSelectIsWhite = darkAppearanceControls.selectBackground === 'rgb(255, 255, 255)';
+  if (darkAppearanceControls.present && (darkSelectIsWhite || !darkAppearanceControls.fitsPanel)) regressionProblems.push(`appearance provider select does not follow native dark/width behavior: ${JSON.stringify(darkAppearanceControls)}`);
   if (regressionProblems.length) throw new Error(`Appearance regression: ${regressionProblems.join('; ')}`);
   if (settingsScreenshotPath) {
     window.showInactive();
@@ -423,15 +442,45 @@ app.whenReady().then(async () => {
   const settings = await window.webContents.executeJavaScript(`(() => { const root = document.querySelector('[data-dsh-appearance-panel]').shadowRoot; return { tabs: [...root.querySelectorAll('[data-page]')].map(x => x.textContent), sources: root.querySelectorAll('.source-card').length, extensions: root.querySelectorAll('.extension-card').length }; })()`);
   if (settings.tabs.join("|") !== "外观设置|我的主题|主题编辑" || settings.sources !== 3 || settings.extensions !== 1) throw new Error(`Unexpected appearance settings: ${JSON.stringify(settings)}`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-panel]').shadowRoot.querySelector('[data-page=themes]').click()`);
-  await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelectorAll('.theme-card').length === 4`);
+  await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelectorAll('.theme-card').length === 0`);
+  if (themesScreenshotPath) {
+    window.showInactive();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    writeFileSync(themesScreenshotPath, (await window.webContents.capturePage()).toPNG());
+  }
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-appearance-panel]').shadowRoot.querySelector('[data-action=create-theme]').click()`);
   await waitFor(window, `document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot?.querySelector('.editor-page')`);
+  const editorRegression = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+    const originallyDark = document.body.hasAttribute('data-ds-dark-theme');
+    document.body.setAttribute('data-ds-dark-theme', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const root = document.querySelector('[data-dsh-appearance-panel]')?.shadowRoot;
+      const input = root?.querySelector('[data-editor=name]');
+      const slot = root?.querySelector('.asset-slot');
+      const strong = slot?.querySelector('strong');
+      const small = slot?.querySelector('small');
+      const slotRect = slot?.getBoundingClientRect();
+      const strongRect = strong?.getBoundingClientRect();
+      const smallRect = small?.getBoundingClientRect();
+      const inputStyle = input ? getComputedStyle(input) : null;
+      const contentCenter = strongRect && smallRect ? (strongRect.top + smallRect.bottom) / 2 : -1;
+      resolve({
+        inputBackground: inputStyle?.backgroundColor ?? '',
+        inputColor: inputStyle?.color ?? '',
+        slotCenter: slotRect ? (slotRect.top + slotRect.bottom) / 2 : -1,
+        contentCenter,
+        centered: Boolean(slotRect && strongRect && smallRect && Math.abs(contentCenter - (slotRect.top + slotRect.bottom) / 2) <= 4),
+      });
+      if (!originallyDark) document.body.removeAttribute('data-ds-dark-theme');
+    }));
+  })`);
+  if (editorRegression.inputBackground === 'rgb(255, 255, 255)' || !editorRegression.centered) throw new Error(`Appearance editor does not follow native dark/alignment behavior: ${JSON.stringify(editorRegression)}`);
   if (screenshotPath) {
     window.showInactive();
     await new Promise((resolve) => setTimeout(resolve, 250));
     writeFileSync(screenshotPath, (await window.webContents.capturePage()).toPNG());
   }
-  console.log(JSON.stringify({ settings, editor: true, nativeReference, appearanceLayout: regression.layout }));
+  console.log(JSON.stringify({ settings, editor: true, darkAppearanceControls, editorRegression, nativeReference, appearanceLayout: regression.layout }));
   window.destroy();
   app.quit();
 }).catch((error) => { console.error(error); app.exit(1); });

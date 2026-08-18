@@ -238,12 +238,29 @@ app.whenReady().then(async () => {
     `);
   }
   await waitForPage(window, `document.querySelector('[data-dsh-desktop-market-tab]')`);
+  await window.webContents.executeJavaScript(`document.body.setAttribute('data-ds-dark-theme', '')`);
   const initialIsolation = await window.webContents.executeJavaScript(`(() => {
     const panel = document.querySelector('[data-dsh-desktop-market-panel]');
     return { hidden: panel.hidden, display: getComputedStyle(panel).display };
   })()`);
   await window.webContents.executeJavaScript(`document.querySelector('[data-dsh-desktop-market-tab]').click()`);
   await waitForPage(window, `document.querySelector('[data-dsh-desktop-market-panel]')?.shadowRoot?.querySelectorAll('.card').length === 4`);
+
+  const darkStyle = await window.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('[data-dsh-desktop-market-panel]')?.shadowRoot;
+    const search = root?.querySelector('.search');
+    const sort = root?.querySelector('.sort');
+    const card = root?.querySelector('.card');
+    const searchStyle = search ? getComputedStyle(search) : null;
+    const sortStyle = sort ? getComputedStyle(sort) : null;
+    const cardStyle = card ? getComputedStyle(card) : null;
+    return {
+      searchBackground: searchStyle?.backgroundColor ?? '',
+      searchColor: searchStyle?.color ?? '',
+      sortBackground: sortStyle?.backgroundColor ?? '',
+      cardBackground: cardStyle?.backgroundColor ?? '',
+    };
+  })()`);
   if (!useFixture) {
     await waitForPage(window, `!document.body.innerText.includes('Loading plugins...')`);
   }
@@ -364,11 +381,15 @@ app.whenReady().then(async () => {
     tabIsolation,
     ...searchInteraction,
     ...installInteraction,
+    darkStyle,
     postInteraction,
   };
   console.log(JSON.stringify(result));
   const passed = result.initialIsolation.hidden === true
     && result.initialIsolation.display === "none"
+    && result.darkStyle.searchBackground !== "rgb(255, 255, 255)"
+    && result.darkStyle.sortBackground !== "rgb(255, 255, 255)"
+    && result.darkStyle.cardBackground !== "rgb(255, 255, 255)"
     && result.tabIsolation.active.hidden === false
     && result.tabIsolation.active.display !== "none"
     && result.tabIsolation.native.length >= 2
