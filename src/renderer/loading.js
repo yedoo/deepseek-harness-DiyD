@@ -13,7 +13,7 @@ window.dshDesktop.onStatus((status) => {
   const canSelectHarness = Boolean(status.canSelectHarness);
   activity.hidden = failed;
   actions.hidden = !failed;
-  retryButton.hidden = canSelectHarness;
+  retryButton.hidden = false;
   selectButton.hidden = !canSelectHarness;
 });
 

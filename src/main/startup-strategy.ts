@@ -11,6 +11,20 @@ export interface StartupStrategyOptions<TInstallation> {
   resolveHarnessInstallation: () => TInstallation;
 }
 
+export interface HarnessBootstrapPolicy {
+  isPackaged: boolean;
+  explicitRoot?: string;
+  preferredUrl?: string;
+  managedHarnessEnabled?: boolean;
+}
+
+export function shouldBootstrapMissingHarness(policy: HarnessBootstrapPolicy): boolean {
+  return policy.isPackaged
+    && !policy.explicitRoot
+    && !policy.preferredUrl
+    && policy.managedHarnessEnabled !== false;
+}
+
 export async function chooseStartupStrategy<TInstallation>(
   options: StartupStrategyOptions<TInstallation>,
 ): Promise<StartupStrategy<TInstallation>> {

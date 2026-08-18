@@ -1,0 +1,61 @@
+name: Bug 报告
+description: 报告可以稳定复现的问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 感谢反馈。请先搜索已有 Issue，并删除日志中的 API Key、令牌和私人路径。
+  - type: input
+    id: desktop-version
+    attributes:
+      label: 桌面客户端版本
+      placeholder: v0.9.1
+    validations:
+      required: true
+  - type: input
+    id: harness-version
+    attributes:
+      label: DeepSeek Harness 版本
+      placeholder: v0.1.0-rc.7
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows 版本
+      placeholder: Windows 11 24H2 x64
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？你原本期望什么？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 可拖入截图或粘贴已脱敏日志。
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue，没有找到相同问题。
+          required: true
+        - label: 我已删除 API Key、访问令牌和其他敏感信息。
+          required: true

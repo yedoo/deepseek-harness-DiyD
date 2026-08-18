@@ -1,0 +1,44 @@
+name: 功能建议
+description: 提议新的桌面能力、交互或扩展接口
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 谁会在什么情况下遇到什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 描述预期流程；涉及界面时可附草图或参考产品。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 目前怎样绕过这个问题？为什么仍需要新功能？
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能范围
+      options:
+        - 桌面启动与更新
+        - 插件与市场
+        - Skills
+        - 外观与主题
+        - 工作区与会话
+        - 社区与文档
+        - 其他
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 参与方式
+      options:
+        - label: 我愿意协助实现或测试这个功能。

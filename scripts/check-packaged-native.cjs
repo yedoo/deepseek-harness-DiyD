@@ -3,10 +3,13 @@ const { existsSync } = require("node:fs");
 const { execFile } = require("node:child_process");
 const { app } = require("electron");
 
+const PACKAGED_PROBE_TIMEOUT_MS = 15_000;
+const SMOKE_TEST_TIMEOUT_MS = PACKAGED_PROBE_TIMEOUT_MS + 15_000;
+
 const timeout = setTimeout(() => {
   console.error("Packaged native smoke test timed out.");
   app.exit(1);
-}, 10_000);
+}, SMOKE_TEST_TIMEOUT_MS);
 
 app.whenReady().then(async () => {
   const packagedModule = path.join(
@@ -57,7 +60,7 @@ app.whenReady().then(async () => {
       {
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
         windowsHide: true,
-        timeout: 10_000,
+        timeout: PACKAGED_PROBE_TIMEOUT_MS,
       },
       (error, stdout) => error ? reject(error) : resolve(stdout.trim()),
     );

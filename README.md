@@ -1,99 +1,163 @@
 # DeepSeek Harness Desktop
 
-一个简洁、无边框的 DeepSeek Harness 桌面宿主。它保留官方 Harness 的界面和数据格式，只负责窗口、启动、进程和系统集成。
+[English](README.en.md) · [下载最新版](https://github.com/yedoo/deepseek-harness-DiyD/releases/latest) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 
-> 本项目是非官方桌面客户端，与 DeepSeek 官方无隶属关系。DeepSeek 名称与标识归其权利人所有。
+[![Windows CI](https://github.com/yedoo/deepseek-harness-DiyD/actions/workflows/windows.yml/badge.svg)](https://github.com/yedoo/deepseek-harness-DiyD/actions/workflows/windows.yml)
+[![Release](https://img.shields.io/github/v/release/yedoo/deepseek-harness-DiyD)](https://github.com/yedoo/deepseek-harness-DiyD/releases/latest)
+[![License](https://img.shields.io/github/license/yedoo/deepseek-harness-DiyD)](LICENSE)
 
-## 第一版包含
+一个简洁、无边框、开箱即用的 DeepSeek Harness Windows 桌面客户端。它保留官方工作台和数据格式，补充桌面启动、独立更新、插件市场、外观主题和 Skills 管理。
 
-- 36px 无边框桌面标题栏
-- 最小化、最大化、还原和关闭
-- 单实例运行
-- 自动连接已运行的 `127.0.0.1:3080`
-- 未发现服务时自动分配端口并启动 `dsh web`
-- 复用 Electron 内置 Node，运行客户端无需单独安装 Node.js
-- 自动沿用 Harness 安装目录旁的 `data` 数据目录
-- 首次运行可选择本机 DeepSeek Harness 目录
-- Windows 工作区选择器会立即显示在桌面窗口前方
-- 启动状态、失败重试和日志入口
-- 独立检查桌面客户端与官方 Harness 的新版本
-- 标题栏右上角使用静态更新图标；有新版时显示蓝色圆点，检查状态只在对应行显示
-- 客户端新版会在后台自动下载，面板显示实际大小、已传输字节、速度和进度；正常退出或点击“立即重启”后自动安装
-- Harness 可直接在应用内增量更新：复用现有托管运行时与共享 npm 缓存，后台 staging 安装，重启后切换、健康检查与失败回滚
-- Harness 更新事务写入磁盘；页面重载、退出或切换中断后都能恢复真实状态
-- Harness 更新使用用户目录中的独立运行时，不覆盖本地源码目录或会话数据
-- 在官方设置页中原位增加独立插件市场，保留工作台、侧栏与设置导航的原始布局
-- 插件目录优先读取社区清单，网络不可用时使用本地缓存或内置精选列表；支持搜索、分类、排序和星标信息
-- 搜索同时覆盖精选目录、npm 与 GitHub；支持直接输入 npm 包名、`owner/repo` 或完整 GitHub 地址
-- 在线发现结果必须包含可验证的 DSH bundle/client 声明，并标记为“未经市场审核”后才能进入安装确认
-- 安装与卸载在应用内完成，先显示来源与命令确认，只接受 GitHub 来源和受限的 `dsh plugin --profile web add` 安装格式
-- 插件变更复用现有 Harness 数据目录，完成后按当前连接方式提供一键重启或准确的手动重启提示
-- 在官方设置页增加独立“外观”分类，包含外观设置、我的主题和主题编辑三页，不改写原有设置页面
-- 原生支持跟随系统/明亮/深色、本地背景、暗化、玻璃模糊、面板透明度、边框和圆角
-- 主题可配置背景、左右人物、侧边栏装饰、输入框装饰和封面等独立图层
-- 自定义主题可复制、编辑、应用、删除，并以带图片资源的 `.dsh-theme` 主题包导入或导出
-- 主题包只接受声明式 JSON 和受限图片格式，不执行主题包中的 JavaScript、CSS 或安装脚本
-- 外观插件通过 `background`、`theme`、`overlay`、`effect` 能力注册；Wallpaper Engine 是首个兼容适配器，不是写死的专用主题系统
-- 仅允许 Harness 本机源留在应用内，外部网页使用系统浏览器打开
-- 退出时只清理客户端自己启动的 Harness 进程
+> 本项目是非官方社区项目，与 DeepSeek 官方无隶属关系。DeepSeek 名称与标识归其权利人所有。
 
-这一版暂不包含主题商店、可执行主题脚本、托盘、Harness 源码改写、内置终端和文件树。
+## 快速开始
 
-## 外观与主题包
+1. 从 [GitHub Releases](https://github.com/yedoo/deepseek-harness-DiyD/releases/latest) 下载 `DeepSeek-Harness-Desktop-*-x64.exe`。
+2. 双击安装包，一键完成当前用户安装并启动客户端。
+3. 全新电脑会自动下载并验证官方 `@deepseek-ai/dsh`，不需要安装 Node.js、打开本地端口或准备源码仓库。
+4. 初始化完成后直接进入工作台；以后客户端和 Harness 都可以在应用内更新。
 
-打开“设置 → 外观”即可管理原生外观。外观设置中的背景来源互斥：纯色、本地图片或某个背景提供器只会启用一个；叠加层和特效类型的扩展可与当前背景组合。主题应用后，用户在外观设置中的调整作为覆盖层保留，优先级高于主题默认值。
+首次下载失败时可以直接重试；高级用户也可以选择本机 Harness 源码目录。显式配置过本地目录或服务地址时，客户端不会覆盖你的选择。
 
-明亮、深色与跟随系统继续使用 Harness 自带的“通用设置 → 外观”，桌面端不维护第二套显示模式。外观页会直接继承 Harness 的原生主题颜色；已接入外观提供器的插件设置会集中显示在外观页，不再在通用设置中重复展示。
+当前支持 Windows 10/11 x64。macOS 暂未进入当前开发优先级。
 
-主题编辑器提供主背景、左右人物、侧边栏装饰、输入框装饰和主题封面六个资源槽。选中的图片会复制到客户端自己的外观目录，原始文件移动或删除不会让主题立即失效。导出的 `.dsh-theme` 是 ZIP 容器，内含 `manifest.json` 和受限图片资源；导入时会检查路径、类型、单文件大小和解压总大小。
+## 为什么做这个项目
 
-外观扩展使用通用提供器模型。当前 Wallpaper Engine 适配器读取已安装插件的本机资源接口，并兼容该插件原有的本地配置；后续插件可以通过 `dsh:appearance-provider-register` 声明自身能力，设置页会将其放入“外观扩展”，状态变化通过 `dsh:appearance-provider-state` 通知插件，无需为每个插件重新设计固定卡片。
+官方 Harness 提供 Agent 和 Web 工作台能力，本项目专注于把它变成普通用户可以安装、启动和维护的桌面产品：
 
-## 插件市场
+- 不要求用户理解 Node.js、命令行或本地端口；
+- 不分叉和改写官方 Harness 源码；
+- 客户端、Harness、插件和主题各自独立更新；
+- 保留社区插件生态，同时允许桌面端提供更完整的管理界面；
+- 把文件、进程和系统能力放在受限的 Electron Main 层中。
 
-插件市场是桌面客户端自己的实现，不会安装或嵌入 `dsh-market`。界面借鉴社区市场的数据组织方式，但目录读取、筛选、安装确认、状态保存和错误恢复均由本项目维护，方便后续继续做个性化调整。
+## 主要功能
 
-市场默认读取 `https://awesome-dsh-plugin.com/plugins.json`，并过滤掉市场插件自身。输入至少两个字符后，客户端会在短暂防抖后并行查询 npm 与 GitHub；直接粘贴 npm 包名、`owner/repo` 或完整 GitHub 地址也可使用。在线结果会读取候选包的 `package.json`，只有声明 `dsh.bundle.patch` 或有效 `dsh.client` 配置、且能解析到 GitHub 源码仓库的包才会显示。查询结果缓存 10 分钟，减少 GitHub API 频率限制影响。
+### 桌面体验
 
-为避免搜索结果被伪造成精选条目，客户端明确区分“已审核”和“npm/GitHub · 未审核”。未审核结果会展示版本、源码、安装目标及生命周期脚本提示，并在安装前再次确认；渲染层只提交服务器生成的结果 ID，不能自行拼接任意安装命令。安装失败时保留原配置并提供日志入口。安装状态来自当前 `DSH_HOME/profiles/web/package.json`，不会只依赖界面缓存。
+- 36px 无边框标题栏和完整窗口控制；
+- 单实例运行；
+- 自动连接已经运行的本机 Harness；
+- 未发现服务时自动分配端口并启动工作台；
+- Windows 工作区目录选择器保持在应用前方；
+- 启动状态、失败重试和日志入口；
+- 退出时只清理客户端自己启动的 Harness 进程。
 
-## 更新方式
+### 一键初始化与独立更新
 
-桌面客户端安装后会从本项目的 GitHub Releases 检查新版。发现新版后会自动在后台下载，标题栏面板显示真实下载大小、已传输字节、速度与进度；下载完成可立即重启，也可在之后正常退出时自动安装。发布同时提供 NSIS blockmap，更新器优先执行差分下载，无法差分时才回退到完整安装包。安装程序使用 `latest.yml` 中的 SHA-512 校验下载文件。
+- 正式安装版首次启动会从官方 npm 获取最新可安装 Harness；
+- 使用 Electron 内置 Node.js 和用户目录中的独立托管运行时；
+- 下载、版本校验、独立启动验证、原子切换和失败回滚组成完整事务；
+- 首次启动验证失败后保留已下载运行时，重试不必重新下载；
+- 客户端从本项目 Releases 后台下载新版，可立即重启或退出时安装；
+- NSIS blockmap 支持桌面客户端差分更新；
+- Harness 后续升级复用当前运行时和 npm 缓存，完成后重启切换；
+- 更新不会覆盖源码目录、`DSH_HOME` 或工作区文件。
 
-官方 Harness 使用独立版本通道：客户端读取当前运行版本，再与 npm 上的 `@deepseek-ai/dsh` 最新版本比较。用户确认后，独立 worker 会把当前托管运行时复用到 `harness-runtime/staging`（文件系统支持时优先写时复制，否则安全复制），再利用共享 npm 缓存只调整变化的依赖；复制和安装不会阻塞桌面窗口。首次从源码安装迁移到托管运行时时仍需创建完整运行时，后续升级才进入增量路径。校验完成后界面显示“已准备好，重启后生效”。下一次启动时客户端执行原子切换与独立健康检查；失败会恢复旧运行时或原源码安装。
+### 插件市场
 
-更新阶段、目标版本、时间和失败原因记录在持久化事务文件中。即使客户端在切换前后意外退出，下一次启动也会继续完成或安全回退，更新面板不会依赖一次性的页面事件。源码目录、`DSH_HOME` 与工作区文件都不会被更新器改写。
+- 在官方设置页原位增加独立插件市场；
+- 默认读取社区目录，离线时使用缓存或内置精选列表；
+- 同时搜索社区目录、npm 和 GitHub；
+- 支持 npm 包名、`owner/repo` 和完整 GitHub 地址；
+- 安装前展示来源、目标和生命周期脚本风险；
+- 在线结果必须包含可验证的 DSH bundle/client 声明；
+- 支持安装、停用、启用、卸载和按真实配置识别已安装插件；
+- 插件变更后提供一键重启 Harness。
 
-更新验证会为首次配置迁移保留 120 秒冷启动时间；普通工作台启动仍使用 30 秒上限。若启动检查失败，点击“重试更新”会优先复用已经下载并校验过的运行时，无需重复下载。
+### 外观与主题
 
-两个通道均在启动约 3 秒后检查，之后每 6 小时检查一次。客户端新版静默进入后台下载，Harness 仍由用户确认后更新；发现新版时只显示状态圆点，不主动弹窗。网络失败不会影响工作台启动。安装版连接到已经运行的 `127.0.0.1:3080` 时，会从该进程识别并保存实际 Harness 目录，因此版本检查不再依赖首次目录选择。
+- 独立“外观”分类，不改写官方通用设置；
+- 支持纯色、本地图片和外观提供器三种背景来源；
+- 支持暗化、玻璃模糊、面板透明度、边框和圆角；
+- 主题可配置主背景、左右人物、侧边栏装饰、输入框装饰和封面；
+- 自定义主题可以复制、编辑、应用和删除；
+- `.dsh-theme` 可连同图片资源导入、导出和分享；
+- 主题包只接受声明式 JSON 和受限图片，不执行 JavaScript、CSS 或安装脚本；
+- 外观插件通过通用能力注册，Wallpaper Engine 只是首个适配器，并非写死的专用页面。
+
+明亮、深色和跟随系统继续使用 Harness 原生显示模式，桌面端不会维护第二套冲突的深浅色设置。
+
+### Skills 管理
+
+- 在官方设置中增加独立 Skills 页面；
+- 按当前工作区、用户和 Harness 内置来源发现 Skill；
+- 搜索并查看来源、调用范围、说明和完整 Markdown 内容；
+- 在应用内阅读 `SKILL.md`，也可以打开原文件或所在目录；
+- 支持导入 Skill 到当前工作区。
+
+## 安装与数据模型
+
+```text
+桌面客户端
+├─ Electron 与桌面功能
+├─ harness-runtime/current      # 自动管理的官方 Harness
+├─ npm-cache                    # 首次安装和更新共享缓存
+├─ data                         # Harness 会话与配置
+├─ plugin-market               # 市场缓存和状态
+└─ appearance                  # 主题与图片资源
+```
+
+这些目录都位于当前用户的 Electron 应用数据目录。自动安装不写入系统 Node.js，也不会修改你已有的 Harness 源码仓库。
+
+客户端仍支持开发者自定义：
+
+| 环境变量 | 用途 |
+| --- | --- |
+| `DSH_INSTALL_ROOT` | 指定官方 Harness 源码仓库目录 |
+| `DSH_HOME` | 指定 Harness 数据目录 |
+| `DSH_SERVER_URL` | 连接指定的本机 Harness 地址 |
+| `DSH_NODE_EXECUTABLE` | 使用指定 Node.js；默认复用 Electron 内置 Node |
+
+## 更新策略
+
+客户端和 Harness 使用两个独立通道：
+
+```text
+桌面客户端 → GitHub Releases → 后台差分下载 → 重启安装
+官方 Harness → npm 官方包 → staging → 健康检查 → 重启切换/失败回滚
+```
+
+两个通道在启动后检查，之后每六小时检查一次。网络失败不会阻止已有工作台启动；发现新版只在标题栏显示状态圆点，不主动打断工作。
+
+## 安全设计
+
+- Renderer 使用沙箱、`contextIsolation`，不启用 Node.js；
+- Preload 只暴露窗口、更新、插件、主题、Skills 和日志所需的受限操作；
+- 应用内导航锁定到当前 Harness 的精确本机 Origin；
+- 外部网页使用系统浏览器打开；
+- 插件安装命令由 Main 层生成和校验，页面不能提交任意命令；
+- 主题包解压时限制路径、类型、单文件大小和总大小。
+
+漏洞请按照 [SECURITY.md](SECURITY.md) 私下报告。
 
 ## 本地开发
 
-建议目录结构：
+需要 Node.js 20 或更高版本。
+
+```powershell
+npm ci
+npm test
+npm run typecheck
+npm run dev
+```
+
+开发模式为了避免在调试时意外下载运行时，不会执行自动首次安装。建议使用：
 
 ```text
 DeepSeek/
 ├─ deepseek-harness/          # 官方仓库
 ├─ deepseek-harness-desktop/  # 本项目
-└─ data/                      # 会话与配置
+└─ data/                      # 可选共享数据目录
 ```
 
-安装依赖并启动：
-
-```powershell
-npm install
-npm run dev
-```
-
-如果官方仓库不在相邻目录，首次启动时选择仓库目录，或者设置：
+如果官方仓库不在相邻目录，首次运行时选择目录或设置：
 
 ```powershell
 $env:DSH_INSTALL_ROOT = "D:\DeepSeek\deepseek-harness"
 ```
 
-## 验证与构建
+常用验证命令：
 
 ```powershell
 npm test
@@ -101,29 +165,56 @@ npm run typecheck
 npm run build
 npm run test:market-ui
 npm run test:appearance-ui
+npm run test:skills-ui
 npm run dist:win
+npm run test:packaged-native
 ```
 
 Windows 安装包输出到 `release/`。
 
-## 可选环境变量
-
-| 变量 | 用途 |
-| --- | --- |
-| `DSH_INSTALL_ROOT` | 指定官方 Harness 仓库目录 |
-| `DSH_HOME` | 指定 Harness 数据目录 |
-| `DSH_SERVER_URL` | 连接指定的本机 Harness 地址 |
-| `DSH_NODE_EXECUTABLE` | 使用指定 Node.js；默认复用 Electron 内置 Node |
-
 ## 架构
 
-桌面窗口只调用 `HarnessService.start()` 与 `HarnessService.stop()`。路径发现、已有服务探测、随机端口、进程启动、健康检查、日志和清理全部封装在该模块内部。
+```text
+Electron Main
+  ├─ 首次安装 / 启动 / 更新 / 系统能力
+  │              │ 受限 IPC
+  ▼              ▼
+Sandboxed Preload 扩展
+  │              │ 当前本机 Origin
+  ▼              ▼
+官方 Harness Web 工作台
+```
 
-Renderer 不启用 Node.js，Preload 只暴露窗口控制、重试、目录选择、更新、插件市场、外观主题和日志所需的受限操作。应用内导航锁定到当前 Harness 的精确本机 Origin。
+详细模块、首次安装事务和安全不变量见 [docs/architecture.md](docs/architecture.md)。
 
-## 后续方向
+## 参与贡献
 
-1. 完善应用图标、签名和安装体验
-2. 系统托盘与任务完成通知
-3. 更新日志、发布通道与签名
-4. 主题商店与更多外观扩展适配器
+任何人都可以 Fork 仓库并提交 Pull Request。PR 合并到默认分支后，GitHub 会自动把作者计入 Contributors，不需要提前申请仓库写入权限。
+
+参与前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。第一次贡献可以从 `good first issue`、`help wanted` 或文档任务开始。
+
+我们特别欢迎：
+
+- 启动、更新和失败恢复测试；
+- 插件与 Skills 兼容性适配；
+- UI/UX、可访问性和多语言改进；
+- Windows 安装、签名和性能优化；
+- 文档、示例主题和插件目录维护。
+
+## 路线图
+
+- [x] Windows 桌面宿主
+- [x] 客户端与 Harness 独立更新
+- [x] 在线插件市场
+- [x] 外观、主题包与外观提供器
+- [x] Skills 管理
+- [x] 全新电脑自动初始化 Harness
+- [ ] Windows 代码签名和更顺滑的安装体验
+- [ ] 系统托盘与任务完成通知
+- [ ] 主题商店与更多外观扩展
+- [ ] 移动端安全远程控制
+- [ ] macOS 适配
+
+## License
+
+[MIT](LICENSE)

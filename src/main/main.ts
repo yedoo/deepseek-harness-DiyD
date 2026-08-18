@@ -20,6 +20,10 @@ import {
 } from "./desktop-updater";
 import { ElectronUpdateTransport } from "./electron-update-transport";
 import { HarnessService, isHarnessHealthy } from "./harness-service";
+import {
+  HarnessBootstrapper,
+  type HarnessBootstrapStage,
+} from "./harness-bootstrapper";
 import { HarnessUpdateCoordinator } from "./harness-update-coordinator";
 import { HarnessUpdateProbe } from "./harness-update-probe";
 import { HarnessUpdateTransactionStore } from "./harness-update-transaction";
@@ -40,7 +44,11 @@ import {
   ProcessPluginPackageInstaller,
 } from "./plugin-market";
 import { RunningHarnessLocator } from "./running-harness-locator";
-import { chooseStartupStrategy } from "./startup-strategy";
+import {
+  chooseStartupStrategy,
+  shouldBootstrapMissingHarness,
+  type StartupStrategy,
+} from "./startup-strategy";
 import {
   bringWorkspaceDialogToForeground,
   prepareForWorkspaceDialog,
@@ -74,6 +82,7 @@ let settingsStore: DesktopSettingsStore | undefined;
 let desktopUpdater: DesktopUpdater | undefined;
 let harnessUpdater: HarnessUpdater | undefined;
 let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
+let harnessBootstrapper: HarnessBootstrapper | undefined;
 let harnessUpdateCoordinator: HarnessUpdateCoordinator | undefined;
 let pluginMarketService: PluginMarketService | undefined;
 let appearanceService: AppearanceService | undefined;
@@ -142,6 +151,10 @@ void app.whenReady().then(async () => {
       logsRoot: path.join(userDataRoot, "logs"),
       runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
     }),
+  );
+  harnessBootstrapper = new HarnessBootstrapper(
+    harnessRuntimeInstaller,
+    fetchLatestHarnessVersion,
   );
   harnessUpdateCoordinator = new HarnessUpdateCoordinator(
     harnessRuntimeInstaller,
@@ -227,23 +240,37 @@ async function startHarness(): Promise<void> {
   resetHarnessUpdater();
   await showLoading({ phase: "starting", message: "正在准备桌面工作台…" });
 
+  let bootstrapAttempted = false;
   try {
     sendStatus({ phase: "starting", message: "正在检查已有的 Harness 服务…" });
     const managedInstallation = preferredManagedInstallation();
-    const strategy = await chooseStartupStrategy({
-      preferredUrl: process.env.DSH_SERVER_URL,
-      preferInstallation: managedInstallation !== undefined,
-      isHealthy: isHarnessHealthy,
-      resolveHarnessInstallation: () => {
-        const installation = managedInstallation ?? resolveConfiguredHarnessInstallation();
-        const dataRoot = resolveHarnessDataRoot(installation);
-        rememberHarnessInstallation(installation, dataRoot);
-        return {
-          installation,
-          dataRoot,
-        };
-      },
-    });
+    let strategy: StartupStrategy<{
+      installation: HarnessInstallation;
+      dataRoot: string;
+    }>;
+    try {
+      strategy = await chooseStartupStrategy({
+        preferredUrl: process.env.DSH_SERVER_URL,
+        preferInstallation: managedInstallation !== undefined,
+        isHealthy: isHarnessHealthy,
+        resolveHarnessInstallation: () => {
+          const installation = managedInstallation ?? resolveConfiguredHarnessInstallation();
+          const dataRoot = resolveHarnessDataRoot(installation);
+          rememberHarnessInstallation(installation, dataRoot);
+          return {
+            installation,
+            dataRoot,
+          };
+        },
+      });
+    } catch (error) {
+      if (!isMissingHarnessError(error) || !shouldBootstrapCurrentApp()) {
+        throw error;
+      }
+      bootstrapAttempted = true;
+      await bootstrapHarnessRuntime();
+      return;
+    }
 
     if (strategy.kind === "connect") {
       harnessService = undefined;
@@ -275,11 +302,56 @@ async function startHarness(): Promise<void> {
       phase: "error",
       message: "桌面工作台启动失败",
       details,
-      canSelectHarness: details.includes("DeepSeek Harness was not found"),
+      canSelectHarness: bootstrapAttempted || details.includes("DeepSeek Harness was not found"),
     });
   } finally {
     starting = false;
   }
+}
+
+async function bootstrapHarnessRuntime(): Promise<void> {
+  if (!harnessBootstrapper) {
+    throw new Error("Harness 首次安装运行时尚未初始化");
+  }
+  const installation = await harnessBootstrapper.install(
+    (stage) => sendStatus({ phase: "starting", message: bootstrapMessage(stage) }),
+    (candidate) => verifyHarnessRuntime(candidate, "正在验证首次安装"),
+  );
+  const dataRoot = resolveHarnessDataRoot(installation);
+  settingsStore?.update({ dataRoot, managedHarnessEnabled: true });
+  sendStatus({ phase: "starting", message: "正在启动桌面工作台…" });
+  await launchHarnessInstallation(installation, dataRoot, false);
+  initializeHarnessUpdater(installation);
+}
+
+function bootstrapMessage(stage: HarnessBootstrapStage): string {
+  switch (stage) {
+    case "checking":
+      return "首次启动：正在获取官方 Harness 版本…";
+    case "preparing":
+      return "首次启动：正在准备独立运行环境…";
+    case "reusing":
+      return "首次启动：正在复用已下载的运行环境…";
+    case "downloading":
+      return "首次启动：正在下载并安装官方 Harness…";
+    case "verifying":
+      return "首次启动：正在校验 Harness 安装…";
+    case "starting":
+      return "首次启动：正在验证 Harness 能否正常运行…";
+  }
+}
+
+function shouldBootstrapCurrentApp(): boolean {
+  return shouldBootstrapMissingHarness({
+    isPackaged: app.isPackaged,
+    explicitRoot: process.env.DSH_INSTALL_ROOT,
+    preferredUrl: process.env.DSH_SERVER_URL,
+    managedHarnessEnabled: settingsStore?.load().managedHarnessEnabled,
+  });
+}
+
+function isMissingHarnessError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("DeepSeek Harness was not found");
 }
 
 async function launchHarnessInstallation(
@@ -487,7 +559,10 @@ async function applyPendingHarnessUpdate(): Promise<void> {
   }
 }
 
-async function verifyHarnessRuntime(installation: HarnessInstallation): Promise<void> {
+async function verifyHarnessRuntime(
+  installation: HarnessInstallation,
+  statusPrefix = "正在验证更新",
+): Promise<void> {
   const probe = new HarnessUpdateProbe((candidate, startupTimeoutMs) => (
     new HarnessService({
       harnessRoot: candidate.root,
@@ -501,7 +576,7 @@ async function verifyHarnessRuntime(installation: HarnessInstallation): Promise<
     })
   ));
   await probe.verify(installation, (message) => {
-    sendStatus({ phase: "starting", message: `正在验证更新：${message}` });
+    sendStatus({ phase: "starting", message: `${statusPrefix}：${message}` });
   });
 }
 
