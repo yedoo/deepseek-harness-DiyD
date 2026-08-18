@@ -7,6 +7,7 @@ import {
 } from "./preload/update-presentation";
 import { injectPluginMarket } from "./preload/plugin-market-ui";
 import { injectAppearanceSettings } from "./preload/appearance-ui";
+import { injectSkillManager } from "./preload/skill-manager-ui";
 import { AppearanceProviderRegistry } from "./preload/appearance-providers";
 import { installAppearanceRuntime } from "./preload/appearance-runtime";
 import type {
@@ -23,6 +24,10 @@ import type {
   AppearanceThemeInput,
   AppearanceThemePatch,
 } from "./appearance-types";
+import type {
+  SkillCatalogSnapshot,
+  SkillImportResult,
+} from "./skill-types";
 
 interface DesktopStatus {
   phase: "starting" | "error";
@@ -80,6 +85,14 @@ const desktopBridge = {
     ipcRenderer.invoke("desktop:restart-harness-for-plugins"),
   openPluginSource: (url: string): Promise<boolean> =>
     ipcRenderer.invoke("desktop:open-plugin-source", url),
+  getSkills: (): Promise<SkillCatalogSnapshot> =>
+    ipcRenderer.invoke("desktop:get-skills"),
+  importSkill: (): Promise<SkillImportResult | undefined> =>
+    ipcRenderer.invoke("desktop:import-skill"),
+  openSkillsDirectory: (): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:open-skills-directory"),
+  openSkill: (skillId: string): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:open-skill", skillId),
   getUpdateStates: (): Promise<UpdateStates> => ipcRenderer.invoke("desktop:get-update-states"),
   checkClientUpdate: (): Promise<DesktopUpdateState> =>
     ipcRenderer.invoke("desktop:check-client-update"),
@@ -620,9 +633,11 @@ if (document.readyState === "loading") {
     injectTitlebar();
     injectPluginMarket(desktopBridge);
     initializeAppearance();
+    injectSkillManager(desktopBridge);
   }, { once: true });
 } else {
   injectTitlebar();
   injectPluginMarket(desktopBridge);
   initializeAppearance();
+  injectSkillManager(desktopBridge);
 }

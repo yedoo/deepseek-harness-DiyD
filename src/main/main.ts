@@ -47,6 +47,7 @@ import {
   WorkspaceDialogForegroundWatcher,
 } from "./workspace-dialog-foreground";
 import { AppearanceService } from "./appearance-service";
+import { SkillService } from "./skill-service";
 import type {
   AppearanceAssetSlot,
   AppearanceConfigPatch,
@@ -432,6 +433,14 @@ function resolveHarnessDataRoot(installation?: HarnessInstallation): string {
   return path.join(app.getPath("userData"), "data");
 }
 
+function currentSkillService(): SkillService {
+  const installation = activeHarnessInstallation ?? tryResolveHarnessInstallation();
+  return new SkillService({
+    dataRoot: resolveHarnessDataRoot(installation),
+    ...(installation ? { harnessRoot: installation.root } : {}),
+  });
+}
+
 function rememberHarnessInstallation(
   installation: HarnessInstallation,
   dataRoot: string,
@@ -672,6 +681,45 @@ function registerDesktopIpc(): void {
     const logsRoot = path.join(app.getPath("userData"), "logs");
     mkdirSync(logsRoot, { recursive: true });
     return shell.openPath(logsRoot);
+  });
+  ipcMain.handle("desktop:get-skills", () => currentSkillService().snapshot());
+  ipcMain.handle("desktop:import-skill", async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error("桌面窗口已经关闭");
+    }
+    const result = await dialog.showOpenDialog(window, {
+      title: "导入 Skill 包",
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length !== 1) {
+      return undefined;
+    }
+    return currentSkillService().importSkill(result.filePaths[0]!);
+  });
+  ipcMain.handle("desktop:open-skills-directory", async () => {
+    const service = currentSkillService();
+    const directory = service.userSkillsRoot();
+    mkdirSync(directory, { recursive: true });
+    const error = await shell.openPath(directory);
+    if (error) {
+      throw new Error(error);
+    }
+    return true;
+  });
+  ipcMain.handle("desktop:open-skill", async (_event, skillId: unknown) => {
+    if (typeof skillId !== "string") {
+      return false;
+    }
+    const entry = currentSkillService().snapshot().skills.find((skill) => skill.id === skillId);
+    if (!entry) {
+      return false;
+    }
+    const error = await shell.openPath(entry.filePath);
+    if (error) {
+      shell.showItemInFolder(entry.filePath);
+    }
+    return true;
   });
   ipcMain.handle("desktop:get-appearance", async () => {
     if (!appearanceService) {
