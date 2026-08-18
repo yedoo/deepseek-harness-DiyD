@@ -148,24 +148,51 @@ app.whenReady().then(async () => {
     const openConfig = [...document.querySelectorAll('button,[role=button]')]
       .find((element) => ['打开配置文件', 'Open config file'].includes(element.textContent?.trim()) && element.getBoundingClientRect().width > 0);
     const openConfigRect = openConfig?.getBoundingClientRect();
+    const openConfigStyle = openConfig ? getComputedStyle(openConfig) : null;
     const closeButton = [...document.querySelectorAll('button')]
-      .find((element) => ['关闭', 'Close'].includes(element.getAttribute('aria-label')) && element.getBoundingClientRect().width > 0);
+      .find((element) => {
+        const label = [element.getAttribute('aria-label'), element.getAttribute('title'), element.textContent?.trim()]
+          .filter(Boolean).join(' ').toLowerCase();
+        return (label.includes('关闭') || label.includes('close') || element.textContent?.trim() === '×')
+          && element.getBoundingClientRect().width > 0;
+      });
     const closeRect = closeButton?.getBoundingClientRect();
+    const closeStyle = closeButton ? getComputedStyle(closeButton) : null;
     return {
       modal: rect ? { top: rect.top, left: rect.left } : null,
       heading: headingRect && rect && headingStyle ? {
         text: heading.textContent?.trim(), top: headingRect.top - rect.top, left: headingRect.left - rect.left,
-        fontSize: headingStyle.fontSize, lineHeight: headingStyle.lineHeight, fontWeight: headingStyle.fontWeight,
+        fontFamily: headingStyle.fontFamily, fontSize: headingStyle.fontSize, lineHeight: headingStyle.lineHeight,
+        fontWeight: headingStyle.fontWeight, letterSpacing: headingStyle.letterSpacing,
       } : null,
       description: descriptionRect && rect && descriptionStyle ? {
         top: descriptionRect.top - rect.top, left: descriptionRect.left - rect.left,
-        fontSize: descriptionStyle.fontSize, lineHeight: descriptionStyle.lineHeight,
+        fontFamily: descriptionStyle.fontFamily, fontSize: descriptionStyle.fontSize,
+        lineHeight: descriptionStyle.lineHeight, fontWeight: descriptionStyle.fontWeight,
+        letterSpacing: descriptionStyle.letterSpacing,
       } : null,
-      headerAction: openConfigRect && rect ? { top: openConfigRect.top - rect.top, right: rect.right - openConfigRect.right } : null,
-      closeAction: closeRect && rect ? {
+      headerAction: openConfigRect && rect && openConfigStyle ? {
+        top: openConfigRect.top - rect.top, right: rect.right - openConfigRect.right,
+        width: openConfigRect.width, height: openConfigRect.height,
+        fontFamily: openConfigStyle.fontFamily, fontSize: openConfigStyle.fontSize,
+        fontWeight: openConfigStyle.fontWeight, lineHeight: openConfigStyle.lineHeight,
+        letterSpacing: openConfigStyle.letterSpacing, color: openConfigStyle.color,
+        backgroundColor: openConfigStyle.backgroundColor, borderWidth: openConfigStyle.borderTopWidth,
+        borderStyle: openConfigStyle.borderTopStyle, borderColor: openConfigStyle.borderTopColor,
+        borderRadius: openConfigStyle.borderRadius, paddingLeft: openConfigStyle.paddingLeft,
+        paddingRight: openConfigStyle.paddingRight, boxShadow: openConfigStyle.boxShadow,
+      } : null,
+      closeAction: closeRect && rect && closeStyle ? {
         top: closeRect.top - rect.top, right: rect.right - closeRect.right,
         width: closeRect.width, height: closeRect.height,
         gap: openConfigRect ? closeRect.left - openConfigRect.right : null,
+        fontFamily: closeStyle.fontFamily, fontSize: closeStyle.fontSize,
+        fontWeight: closeStyle.fontWeight, lineHeight: closeStyle.lineHeight,
+        letterSpacing: closeStyle.letterSpacing, color: closeStyle.color,
+        backgroundColor: closeStyle.backgroundColor, borderWidth: closeStyle.borderTopWidth,
+        borderStyle: closeStyle.borderTopStyle, borderColor: closeStyle.borderTopColor,
+        borderRadius: closeStyle.borderRadius,
+        contentKind: closeButton.firstElementChild?.tagName || 'text',
       } : null,
       host: host ? { parentClass: host.parentElement?.className, parentRect: host.parentElement ? { top: host.parentElement.getBoundingClientRect().top - rect.top, left: host.parentElement.getBoundingClientRect().left - rect.left } : null } : null,
     };
@@ -201,8 +228,10 @@ app.whenReady().then(async () => {
     const appearanceDescriptionStyle = appearanceDescription ? getComputedStyle(appearanceDescription) : null;
     const appearanceHeaderAction = root?.querySelector('[data-native-action=open-config]');
     const appearanceHeaderActionRect = appearanceHeaderAction?.getBoundingClientRect();
+    const appearanceHeaderActionStyle = appearanceHeaderAction ? getComputedStyle(appearanceHeaderAction) : null;
     const appearanceCloseAction = root?.querySelector('[data-native-action=close]');
     const appearanceCloseActionRect = appearanceCloseAction?.getBoundingClientRect();
+    const appearanceCloseActionStyle = appearanceCloseAction ? getComputedStyle(appearanceCloseAction) : null;
     const contentEdges = root ? [...root.querySelectorAll('.tabs,.block')].map((element) => element.getBoundingClientRect().right) : [];
     const lastContent = root?.querySelector('.extension-card') || root?.querySelector('.block:last-child');
     if (shell) shell.scrollTop = shell.scrollHeight;
@@ -229,21 +258,40 @@ app.whenReady().then(async () => {
       } : null,
       heading: appearanceHeadingRect && rect && appearanceHeadingStyle ? {
         top: appearanceHeadingRect.top - rect.top, left: appearanceHeadingRect.left - rect.left,
-        fontSize: appearanceHeadingStyle.fontSize, lineHeight: appearanceHeadingStyle.lineHeight, fontWeight: appearanceHeadingStyle.fontWeight,
+        fontFamily: appearanceHeadingStyle.fontFamily, fontSize: appearanceHeadingStyle.fontSize,
+        lineHeight: appearanceHeadingStyle.lineHeight, fontWeight: appearanceHeadingStyle.fontWeight,
+        letterSpacing: appearanceHeadingStyle.letterSpacing,
       } : null,
       description: appearanceDescriptionRect && rect && appearanceDescriptionStyle ? {
         top: appearanceDescriptionRect.top - rect.top, left: appearanceDescriptionRect.left - rect.left,
-        fontSize: appearanceDescriptionStyle.fontSize, lineHeight: appearanceDescriptionStyle.lineHeight,
+        fontFamily: appearanceDescriptionStyle.fontFamily, fontSize: appearanceDescriptionStyle.fontSize,
+        lineHeight: appearanceDescriptionStyle.lineHeight, fontWeight: appearanceDescriptionStyle.fontWeight,
+        letterSpacing: appearanceDescriptionStyle.letterSpacing,
       } : null,
-      headerAction: appearanceHeaderActionRect && rect ? {
+      headerAction: appearanceHeaderActionRect && rect && appearanceHeaderActionStyle ? {
         top: appearanceHeaderActionRect.top - rect.top,
         right: rect.right - appearanceHeaderActionRect.right,
+        width: appearanceHeaderActionRect.width, height: appearanceHeaderActionRect.height,
+        fontFamily: appearanceHeaderActionStyle.fontFamily, fontSize: appearanceHeaderActionStyle.fontSize,
+        fontWeight: appearanceHeaderActionStyle.fontWeight, lineHeight: appearanceHeaderActionStyle.lineHeight,
+        letterSpacing: appearanceHeaderActionStyle.letterSpacing, color: appearanceHeaderActionStyle.color,
+        backgroundColor: appearanceHeaderActionStyle.backgroundColor, borderWidth: appearanceHeaderActionStyle.borderTopWidth,
+        borderStyle: appearanceHeaderActionStyle.borderTopStyle, borderColor: appearanceHeaderActionStyle.borderTopColor,
+        borderRadius: appearanceHeaderActionStyle.borderRadius, paddingLeft: appearanceHeaderActionStyle.paddingLeft,
+        paddingRight: appearanceHeaderActionStyle.paddingRight, boxShadow: appearanceHeaderActionStyle.boxShadow,
       } : null,
-      closeAction: appearanceCloseActionRect && rect ? {
+      closeAction: appearanceCloseActionRect && rect && appearanceCloseActionStyle ? {
         top: appearanceCloseActionRect.top - rect.top,
         right: rect.right - appearanceCloseActionRect.right,
         width: appearanceCloseActionRect.width, height: appearanceCloseActionRect.height,
         gap: appearanceHeaderActionRect ? appearanceCloseActionRect.left - appearanceHeaderActionRect.right : null,
+        fontFamily: appearanceCloseActionStyle.fontFamily, fontSize: appearanceCloseActionStyle.fontSize,
+        fontWeight: appearanceCloseActionStyle.fontWeight, lineHeight: appearanceCloseActionStyle.lineHeight,
+        letterSpacing: appearanceCloseActionStyle.letterSpacing, color: appearanceCloseActionStyle.color,
+        backgroundColor: appearanceCloseActionStyle.backgroundColor, borderWidth: appearanceCloseActionStyle.borderTopWidth,
+        borderStyle: appearanceCloseActionStyle.borderTopStyle, borderColor: appearanceCloseActionStyle.borderTopColor,
+        borderRadius: appearanceCloseActionStyle.borderRadius,
+        contentKind: appearanceCloseAction.firstElementChild?.tagName || 'text',
       } : null,
     } : null;
     if (shell) shell.scrollTop = 0;
@@ -303,19 +351,38 @@ app.whenReady().then(async () => {
     || Math.abs(nativeHeading.left - appearanceHeading.left) > 1
     || nativeHeading.fontSize !== appearanceHeading.fontSize
     || nativeHeading.lineHeight !== appearanceHeading.lineHeight
-    || nativeHeading.fontWeight !== appearanceHeading.fontWeight) {
+    || nativeHeading.fontWeight !== appearanceHeading.fontWeight
+    || nativeHeading.fontFamily !== appearanceHeading.fontFamily
+    || nativeHeading.letterSpacing !== appearanceHeading.letterSpacing) {
     regressionProblems.push(`appearance heading does not match native page: ${JSON.stringify({ nativeHeading, appearanceHeading })}`);
   }
   if (!nativeDescription || !appearanceDescription
     || Math.abs(nativeDescription.top - appearanceDescription.top) > 1
     || Math.abs(nativeDescription.left - appearanceDescription.left) > 1
     || nativeDescription.fontSize !== appearanceDescription.fontSize
-    || nativeDescription.lineHeight !== appearanceDescription.lineHeight) {
+    || nativeDescription.lineHeight !== appearanceDescription.lineHeight
+    || nativeDescription.fontWeight !== appearanceDescription.fontWeight
+    || nativeDescription.fontFamily !== appearanceDescription.fontFamily
+    || nativeDescription.letterSpacing !== appearanceDescription.letterSpacing) {
     regressionProblems.push(`appearance description does not match native page: ${JSON.stringify({ nativeDescription, appearanceDescription })}`);
   }
-  if (targetUrl && (!nativeReference.headerAction || !regression.layout?.headerAction
-    || Math.abs(nativeReference.headerAction.top - regression.layout.headerAction.top) > 1)) {
-    regressionProblems.push(`appearance header action top does not match native page: ${JSON.stringify({ native: nativeReference.headerAction, appearance: regression.layout?.headerAction })}`);
+  const actionStyleKeys = [
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color', 'backgroundColor',
+    'borderWidth', 'borderStyle', 'borderColor', 'borderRadius', 'paddingLeft', 'paddingRight', 'boxShadow',
+  ];
+  const nativeHeaderAction = nativeReference.headerAction;
+  const appearanceHeaderAction = regression.layout?.headerAction;
+  const headerActionMismatch = !nativeHeaderAction || !appearanceHeaderAction
+    || Math.abs(nativeHeaderAction.top - appearanceHeaderAction.top) > 1
+    || Math.abs(nativeHeaderAction.right - appearanceHeaderAction.right) > 1
+    || Math.abs(nativeHeaderAction.width - appearanceHeaderAction.width) > 1
+    || Math.abs(nativeHeaderAction.height - appearanceHeaderAction.height) > 1
+    || actionStyleKeys.some((key) => nativeHeaderAction[key] !== appearanceHeaderAction[key]);
+  if (targetUrl && headerActionMismatch) {
+    regressionProblems.push(`appearance header action does not match native page: ${JSON.stringify({ native: nativeHeaderAction, appearance: appearanceHeaderAction })}`);
+  }
+  if (targetUrl && nativeReference.closeAction?.contentKind !== regression.layout?.closeAction?.contentKind) {
+    regressionProblems.push(`appearance close icon does not reuse native markup: ${JSON.stringify({ native: nativeReference.closeAction, appearance: regression.layout?.closeAction })}`);
   }
   if (legacyWallpaperPickerDisplay !== 'absent' && legacyWallpaperPickerDisplay !== 'none') regressionProblems.push(`legacy Wallpaper picker visible: ${legacyWallpaperPickerDisplay}`);
   const nativeDarkTextChannels = nativeThemeRegression.hostColor.match(/\d+/g)?.map(Number) ?? [];

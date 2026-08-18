@@ -55,6 +55,14 @@ interface ViewState {
 
 const NAV_ATTRIBUTE = "data-dsh-appearance-nav";
 const PANEL_ATTRIBUTE = "data-dsh-appearance-panel";
+const NATIVE_PAGE_TITLES = new Set([
+  "模型",
+  "Model",
+  "插件",
+  "Plugins",
+  "Agent 预设",
+  "Agent presets",
+]);
 
 export function injectAppearanceSettings(
   api: AppearanceDesktopApi,
@@ -103,9 +111,9 @@ function findSettingsShell(): SettingsShell | undefined {
         nav,
         content,
         referenceButton: general,
-        openConfigButton: findButton(dialog, ["打开配置文件", "Open config file"]),
-        closeButton: dialog.querySelector<HTMLButtonElement>('button[aria-label="关闭"],button[aria-label="Close"]')
-          ?? findButton(dialog, ["关闭", "Close"]),
+        openConfigButton: findButton(dialog, ["打开配置文件", "Open config file"])
+          ?? findButton(document.documentElement, ["打开配置文件", "Open config file"]),
+        closeButton: findCloseButton(dialog) ?? findCloseButton(document.documentElement),
       };
     }
   }
@@ -124,8 +132,9 @@ function findSettingsShell(): SettingsShell | undefined {
     nav,
     content,
     referenceButton: general,
-    openConfigButton: findButton(root, ["打开配置文件", "Open config file"]),
-    closeButton: root.querySelector<HTMLButtonElement>('button[aria-label="关闭"],button[aria-label="Close"]') ?? undefined,
+    openConfigButton: findButton(root, ["打开配置文件", "Open config file"])
+      ?? findButton(document.documentElement, ["打开配置文件", "Open config file"]),
+    closeButton: findCloseButton(root) ?? findCloseButton(document.documentElement),
   };
 }
 
@@ -175,6 +184,14 @@ function installAppearanceSection(
   const nativeChildren = (): HTMLElement[] => Array.from(shell.content.children)
     .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== host);
   const syncNativePageMetrics = (): void => {
+    shell.openConfigButton = findButton(document.documentElement, ["打开配置文件", "Open config file"])
+      ?? shell.openConfigButton;
+    shell.closeButton = findCloseButton(document.documentElement) ?? shell.closeButton;
+    const parentRect = shell.content.getBoundingClientRect();
+    const parentStyle = getComputedStyle(shell.content);
+    const contentTop = parentRect.top + shell.content.clientTop + (Number.parseFloat(parentStyle.paddingTop) || 0);
+    const contentLeft = parentRect.left + shell.content.clientLeft + (Number.parseFloat(parentStyle.paddingLeft) || 0);
+    host.style.setProperty("--dsh-native-ui-font-family", parentStyle.fontFamily);
     const heading = nativeChildren()
       .flatMap((child) => [
         ...(child.matches("h1,h2,h3") ? [child] : []),
@@ -182,36 +199,34 @@ function installAppearanceSection(
       ])
       .find((candidate) => {
         const text = exactText(candidate);
-        return text
-          && !["设置", "Settings"].includes(text)
-          && candidate.getClientRects().length > 0;
+        return NATIVE_PAGE_TITLES.has(text) && candidate.getClientRects().length > 0;
       });
-    if (!heading) return;
-    const parentRect = shell.content.getBoundingClientRect();
-    const parentStyle = getComputedStyle(shell.content);
-    const headingRect = heading.getBoundingClientRect();
-    const contentTop = parentRect.top + shell.content.clientTop + (Number.parseFloat(parentStyle.paddingTop) || 0);
-    const contentLeft = parentRect.left + shell.content.clientLeft + (Number.parseFloat(parentStyle.paddingLeft) || 0);
-    const headingStyle = getComputedStyle(heading);
-    const description = heading.nextElementSibling instanceof HTMLParagraphElement
-      ? heading.nextElementSibling
-      : undefined;
-    const descriptionStyle = description ? getComputedStyle(description) : undefined;
-    const descriptionRect = description?.getBoundingClientRect();
-    const openConfigRect = shell.openConfigButton?.getBoundingClientRect();
-    host.style.setProperty("--dsh-native-page-inset-top", `${Math.max(0, headingRect.top - contentTop)}px`);
-    host.style.setProperty("--dsh-native-page-inset-left", `${Math.max(0, headingRect.left - contentLeft)}px`);
-    host.style.setProperty("--dsh-native-page-title-size", headingStyle.fontSize);
-    host.style.setProperty("--dsh-native-page-title-line-height", headingStyle.lineHeight);
-    host.style.setProperty("--dsh-native-page-title-weight", headingStyle.fontWeight);
-    if (openConfigRect && openConfigRect.width > 0 && openConfigRect.top >= contentTop) {
-      host.style.setProperty("--dsh-native-header-action-top", `${Math.max(0, openConfigRect.top - contentTop)}px`);
+    if (heading) {
+      const headingRect = heading.getBoundingClientRect();
+      const headingStyle = getComputedStyle(heading);
+      const description = heading.nextElementSibling instanceof HTMLParagraphElement
+        ? heading.nextElementSibling
+        : undefined;
+      const descriptionStyle = description ? getComputedStyle(description) : undefined;
+      const descriptionRect = description?.getBoundingClientRect();
+      host.style.setProperty("--dsh-native-page-inset-top", `${Math.max(0, headingRect.top - contentTop)}px`);
+      host.style.setProperty("--dsh-native-page-inset-left", `${Math.max(0, headingRect.left - contentLeft)}px`);
+      host.style.setProperty("--dsh-native-page-title-font-family", headingStyle.fontFamily);
+      host.style.setProperty("--dsh-native-page-title-size", headingStyle.fontSize);
+      host.style.setProperty("--dsh-native-page-title-line-height", headingStyle.lineHeight);
+      host.style.setProperty("--dsh-native-page-title-weight", headingStyle.fontWeight);
+      host.style.setProperty("--dsh-native-page-title-letter-spacing", headingStyle.letterSpacing);
+      if (descriptionStyle && descriptionRect) {
+        host.style.setProperty("--dsh-native-page-description-font-family", descriptionStyle.fontFamily);
+        host.style.setProperty("--dsh-native-page-description-size", descriptionStyle.fontSize);
+        host.style.setProperty("--dsh-native-page-description-line-height", descriptionStyle.lineHeight);
+        host.style.setProperty("--dsh-native-page-description-weight", descriptionStyle.fontWeight);
+        host.style.setProperty("--dsh-native-page-description-letter-spacing", descriptionStyle.letterSpacing);
+        host.style.setProperty("--dsh-native-page-description-gap", `${Math.max(0, descriptionRect.top - headingRect.bottom)}px`);
+      }
     }
-    if (descriptionStyle && descriptionRect) {
-      host.style.setProperty("--dsh-native-page-description-size", descriptionStyle.fontSize);
-      host.style.setProperty("--dsh-native-page-description-line-height", descriptionStyle.lineHeight);
-      host.style.setProperty("--dsh-native-page-description-gap", `${Math.max(0, descriptionRect.top - headingRect.bottom)}px`);
-    }
+    syncNativeButtonMetrics(host, shell.openConfigButton, "config", contentTop, parentRect.right);
+    syncNativeButtonMetrics(host, shell.closeButton, "close", contentTop, parentRect.right);
   };
   const activate = (): void => {
     if (active) return;
@@ -268,6 +283,7 @@ function installAppearanceSection(
   createPanel(shadow, host, api, registry, onSnapshot, {
     openConfig: () => shell.openConfigButton?.click(),
     close: () => shell.closeButton?.click(),
+    closeMarkup: () => shell.closeButton?.querySelector("svg")?.outerHTML ?? "×",
   });
 }
 
@@ -277,7 +293,7 @@ function createPanel(
   api: AppearanceDesktopApi,
   registry: AppearanceProviderRegistry,
   onSnapshot: (snapshot: AppearanceSnapshot) => void,
-  nativeActions: { openConfig(): void; close(): void },
+  nativeActions: { openConfig(): void; close(): void; closeMarkup(): string },
 ): void {
   const state: ViewState = {
     page: "settings",
@@ -346,7 +362,7 @@ function createPanel(
   };
 
   const render = (): void => {
-    root.innerHTML = `<div class="shell">${renderHeader(state)}${renderNotice(state)}${renderBody(state, registry)}</div>`;
+    root.innerHTML = `<div class="shell">${renderHeader(state, nativeActions.closeMarkup())}${renderNotice(state)}${renderBody(state, registry)}</div>`;
     bindCommon(root, state, render, nativeActions);
     if (!state.snapshot) return;
     bindSettings(root, state, api, operation, loadProviderInventory);
@@ -367,9 +383,9 @@ function createPanel(
   render();
 }
 
-function renderHeader(state: ViewState): string {
+function renderHeader(state: ViewState, closeMarkup: string): string {
   return `
-    <header><div><h2>外观</h2><p>管理工作台外观、主题包与外观扩展。</p></div><div class="header-actions"><button data-native-action="open-config">打开配置文件</button><button class="icon-btn" data-native-action="close" aria-label="关闭">×</button></div></header>
+    <header><div><h2>外观</h2><p>管理工作台外观、主题包与外观扩展。</p></div><div class="header-actions"><button class="native-config" data-native-action="open-config">打开配置文件</button><button class="native-close" data-native-action="close" aria-label="关闭">${closeMarkup}</button></div></header>
     <nav class="tabs" aria-label="外观页面">
       ${tabButton("settings", "外观设置", state.page)}
       ${tabButton("themes", "我的主题", state.page)}
@@ -501,7 +517,7 @@ function bindCommon(
   root: HTMLElement,
   state: ViewState,
   render: () => void,
-  nativeActions: { openConfig(): void; close(): void },
+  nativeActions: { openConfig(): void; close(): void; closeMarkup(): string },
 ): void {
   root.querySelectorAll<HTMLElement>("[data-page]").forEach((button) => button.addEventListener("click", () => {
     state.page = button.dataset.page as AppearancePage;
@@ -707,8 +723,56 @@ function exactText(element: Element): string {
 }
 
 function findButton(root: Element, labels: string[]): HTMLButtonElement | undefined {
-  return Array.from(root.querySelectorAll<HTMLButtonElement>("button,[role=button]"))
-    .find((button) => labels.includes(exactText(button)));
+  const candidates = Array.from(root.querySelectorAll<HTMLButtonElement>("button,[role=button]"))
+    .filter((button) => labels.includes(exactText(button)));
+  return candidates.find((button) => button.getClientRects().length > 0) ?? candidates[0];
+}
+
+function findCloseButton(root: Element): HTMLButtonElement | undefined {
+  const candidates = Array.from(root.querySelectorAll<HTMLButtonElement>("button,[role=button]"))
+    .filter((button) => {
+      const label = [button.getAttribute("aria-label"), button.getAttribute("title"), exactText(button)]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase();
+      return label.includes("关闭") || label.includes("close") || exactText(button) === "×";
+    });
+  return candidates.find((button) => button.getClientRects().length > 0) ?? candidates[0];
+}
+
+function syncNativeButtonMetrics(
+  host: HTMLElement,
+  button: HTMLButtonElement | undefined,
+  name: "config" | "close",
+  contentTop: number,
+  contentRight: number,
+): void {
+  const rect = button?.getBoundingClientRect();
+  if (!button || !rect || rect.width <= 0 || rect.height <= 0) return;
+  const style = getComputedStyle(button);
+  const values: Record<string, string> = {
+    top: `${rect.top - contentTop}px`,
+    right: `${contentRight - rect.right}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    "font-family": style.fontFamily,
+    "font-size": style.fontSize,
+    "font-weight": style.fontWeight,
+    "line-height": style.lineHeight,
+    "letter-spacing": style.letterSpacing,
+    color: style.color,
+    background: style.backgroundColor,
+    "border-width": style.borderTopWidth,
+    "border-style": style.borderTopStyle,
+    "border-color": style.borderTopColor,
+    "border-radius": style.borderRadius,
+    "padding-left": style.paddingLeft,
+    "padding-right": style.paddingRight,
+    "box-shadow": style.boxShadow,
+  };
+  Object.entries(values).forEach(([property, value]) => {
+    host.style.setProperty(`--dsh-native-${name}-${property}`, value);
+  });
 }
 
 function escapeHtml(value: string): string {
@@ -726,10 +790,10 @@ function withoutActiveClasses(className: string): string {
 
 function appearanceStyles(): string {
   return `
-    :host { display:block; height:100%; min-height:0; color:var(--dsw-alias-label-primary,#18181b); font:14px/1.45 "Segoe UI Variable","Segoe UI","Microsoft YaHei UI",sans-serif; }
+    :host { display:block; height:100%; min-height:0; color:var(--dsw-alias-label-primary,#18181b); font-family:var(--dsh-native-ui-font-family,inherit); font-size:14px; line-height:1.45; }
     :host([hidden]) { display:none !important; } *,*::before,*::after { box-sizing:border-box; } button,input,select { font:inherit; color:inherit; }
-    .panel-root { height:100%; min-height:0; overflow:hidden; } .shell { position:relative; height:100%; min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; padding:var(--dsh-native-page-inset-top,54px) 24px 40px var(--dsh-native-page-inset-left,24px); } .shell::-webkit-scrollbar { display:none; width:0; height:0; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { position:absolute; top:calc(var(--dsh-native-header-action-top,24px) - 4px); right:24px; display:flex; align-items:center; gap:10px; } .header-actions .icon-btn { min-width:34px; padding:0; border:0; font-size:20px; background:transparent; }
-    h2,h3,p { margin:0; } h2 { font-size:var(--dsh-native-page-title-size,16px); line-height:var(--dsh-native-page-title-line-height,24px); font-weight:var(--dsh-native-page-title-weight,500); } header p { margin-top:var(--dsh-native-page-description-gap,12px); font-size:var(--dsh-native-page-description-size,14px); line-height:var(--dsh-native-page-description-line-height,22px); } header p,.block-title p,.toolbar p,.editor-section>p { color:var(--dsw-alias-label-secondary,#8a8a93); } .block-title p,.toolbar p,.editor-section>p { margin-top:6px; }
+    .panel-root { height:100%; min-height:0; overflow:hidden; } .shell { position:relative; height:100%; min-height:0; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none; padding:var(--dsh-native-page-inset-top,54px) 24px 40px var(--dsh-native-page-inset-left,24px); } .shell::-webkit-scrollbar { display:none; width:0; height:0; } header { display:flex; justify-content:space-between; align-items:flex-start; } .header-actions { position:static; }
+    h2,h3,p { margin:0; } h2 { font-family:var(--dsh-native-page-title-font-family,var(--dsh-native-ui-font-family,inherit)); font-size:var(--dsh-native-page-title-size,16px); line-height:var(--dsh-native-page-title-line-height,24px); font-weight:var(--dsh-native-page-title-weight,500); letter-spacing:var(--dsh-native-page-title-letter-spacing,normal); } header p { margin-top:var(--dsh-native-page-description-gap,12px); font-family:var(--dsh-native-page-description-font-family,var(--dsh-native-ui-font-family,inherit)); font-size:var(--dsh-native-page-description-size,14px); line-height:var(--dsh-native-page-description-line-height,22px); font-weight:var(--dsh-native-page-description-weight,400); letter-spacing:var(--dsh-native-page-description-letter-spacing,normal); } header p,.block-title p,.toolbar p,.editor-section>p { color:var(--dsw-alias-label-secondary,#8a8a93); } .block-title p,.toolbar p,.editor-section>p { margin-top:6px; }
     .tabs { display:flex; gap:28px; height:49px; margin-top:12px; border-bottom:1px solid #e5e5e8; } .tabs button { position:relative; border:0; background:transparent; color:#777780; cursor:pointer; }
     .tabs button[aria-selected=true] { color:#18181b; font-weight:600; } .tabs button[aria-selected=true]::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#18181b; }
     .page { padding-top:18px; } .block { padding:18px 0; border-bottom:1px solid #ececef; } .block.first-block { padding-top:0; } .block-title,.toolbar,.editor-head,.provider-line,.section-heading,.danger-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
@@ -750,5 +814,9 @@ function appearanceStyles(): string {
     .notice { margin-top:12px; padding:9px 11px; border-radius:9px; font-size:12px; } .notice.success { color:#137a44; background:#eefaf3; } .notice.error { color:#b42318; background:#fff1f0; } .empty,.soft-empty { padding:42px 18px; color:#8b8b94; text-align:center; } .soft-empty { border:1px dashed #dedfe3; border-radius:12px; }
     @media (max-width:1050px) { .source-grid,.asset-grid { grid-template-columns:1fr 1fr; } .theme-grid { grid-template-columns:1fr; } .sliders { grid-template-columns:1fr; } }
     :host-context(body[data-ds-dark-theme]) { color:var(--dsw-alias-label-primary,#f4f4f5); } :host-context(body[data-ds-dark-theme]) .tabs { border-color:#3b3b40; } :host-context(body[data-ds-dark-theme]) .tabs button[aria-selected=true] { color:#fff; } :host-context(body[data-ds-dark-theme]) .tabs button[aria-selected=true]::after { background:#fff; } :host-context(body[data-ds-dark-theme]) button { color:inherit; border-color:#424248; background:#29292e; } :host-context(body[data-ds-dark-theme]) button:hover { background:#34343a; } :host-context(body[data-ds-dark-theme]) .block,:host-context(body[data-ds-dark-theme]) .editor-section { border-color:#36363b; } :host-context(body[data-ds-dark-theme]) .source-icon,:host-context(body[data-ds-dark-theme]) .asset-slot>span { background:#313239; } :host-context(body[data-ds-dark-theme]) .provider-panel { border-color:#3d3d43; background:#25252a; } :host-context(body[data-ds-dark-theme]) .provider-panel select { color:inherit; border-color:#46464d; background:#29292e; } :host-context(body[data-ds-dark-theme]) .extension-card,:host-context(body[data-ds-dark-theme]) .theme-card,:host-context(body[data-ds-dark-theme]) .color,:host-context(body[data-ds-dark-theme]) .preview { border-color:#3d3d43; } :host-context(body[data-ds-dark-theme]) .soft-empty { border-color:#45454b; }
+    .native-config,.native-close { position:absolute; z-index:2; margin:0; min-width:0; min-height:0; color:var(--dsh-native-config-color,inherit); box-shadow:var(--dsh-native-config-box-shadow,none); }
+    .native-config { top:var(--dsh-native-config-top,20px); right:var(--dsh-native-config-right,50px); width:var(--dsh-native-config-width,116px); height:var(--dsh-native-config-height,34px); padding-left:var(--dsh-native-config-padding-left,14px); padding-right:var(--dsh-native-config-padding-right,14px); border-width:var(--dsh-native-config-border-width,1px) !important; border-style:var(--dsh-native-config-border-style,solid) !important; border-color:var(--dsh-native-config-border-color,#55555b) !important; border-radius:var(--dsh-native-config-border-radius,999px); background:var(--dsh-native-config-background,transparent) !important; color:var(--dsh-native-config-color,inherit) !important; font-family:var(--dsh-native-config-font-family,var(--dsh-native-ui-font-family,inherit)); font-size:var(--dsh-native-config-font-size,14px); font-weight:var(--dsh-native-config-font-weight,400); line-height:var(--dsh-native-config-line-height,normal); letter-spacing:var(--dsh-native-config-letter-spacing,normal); }
+    .native-close { top:var(--dsh-native-close-top,20px); right:var(--dsh-native-close-right,18px); width:var(--dsh-native-close-width,34px); height:var(--dsh-native-close-height,34px); padding-left:var(--dsh-native-close-padding-left,0px); padding-right:var(--dsh-native-close-padding-right,0px); border-width:var(--dsh-native-close-border-width,0px) !important; border-style:var(--dsh-native-close-border-style,solid) !important; border-color:var(--dsh-native-close-border-color,transparent) !important; border-radius:var(--dsh-native-close-border-radius,999px); background:var(--dsh-native-close-background,transparent) !important; color:var(--dsh-native-close-color,inherit) !important; box-shadow:var(--dsh-native-close-box-shadow,none); font-family:var(--dsh-native-close-font-family,var(--dsh-native-ui-font-family,inherit)); font-size:var(--dsh-native-close-font-size,20px); font-weight:var(--dsh-native-close-font-weight,400); line-height:var(--dsh-native-close-line-height,normal); letter-spacing:var(--dsh-native-close-letter-spacing,normal); }
+    .native-close svg { display:block; width:16px; height:16px; margin:auto; }
   `;
 }
