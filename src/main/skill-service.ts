@@ -11,6 +11,7 @@ import path from "node:path";
 import type {
   SkillCatalogEntry,
   SkillCatalogSnapshot,
+  SkillDetail,
   SkillImportResult,
   SkillSource,
 } from "../skill-types";
@@ -74,6 +75,20 @@ export class SkillService {
         bundled: skills.filter((skill) => skill.source === "bundled").length,
       },
     };
+  }
+
+  detail(skillId: string): SkillDetail | undefined {
+    const skill = this.snapshot().skills.find((entry) => entry.id === skillId);
+    if (!skill) return undefined;
+    try {
+      const content = readFileSync(skill.filePath, "utf8");
+      return {
+        skill,
+        markdown: stripFrontmatter(content).trim(),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   importSkill(sourceDirectory: string): SkillImportResult {
@@ -260,6 +275,10 @@ function parseFrontmatter(content: string): Frontmatter {
   result.modelInvocable = !parseBoolean(fields["disable-model-invocation"], false);
   result.userInvocable = parseBoolean(fields["user-invocable"], true);
   return result;
+}
+
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
 }
 
 function parseSimpleYaml(value: string): Record<string, string> {

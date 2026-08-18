@@ -683,6 +683,10 @@ function registerDesktopIpc(): void {
     return shell.openPath(logsRoot);
   });
   ipcMain.handle("desktop:get-skills", () => currentSkillService().snapshot());
+  ipcMain.handle("desktop:get-skill-detail", (_event, skillId: unknown) => {
+    if (typeof skillId !== "string") return undefined;
+    return currentSkillService().detail(skillId);
+  });
   ipcMain.handle("desktop:import-skill", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) {
@@ -716,6 +720,16 @@ function registerDesktopIpc(): void {
       return false;
     }
     const error = await shell.openPath(entry.filePath);
+    if (error) {
+      shell.showItemInFolder(entry.filePath);
+    }
+    return true;
+  });
+  ipcMain.handle("desktop:open-skill-directory", async (_event, skillId: unknown) => {
+    if (typeof skillId !== "string") return false;
+    const entry = currentSkillService().snapshot().skills.find((skill) => skill.id === skillId);
+    if (!entry) return false;
+    const error = await shell.openPath(path.dirname(entry.filePath));
     if (error) {
       shell.showItemInFolder(entry.filePath);
     }

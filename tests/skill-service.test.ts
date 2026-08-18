@@ -109,6 +109,11 @@ describe("SkillService", () => {
       userInvocable: true,
     });
     expect(snapshot.sourceCounts).toEqual({ project: 1, user: 2, bundled: 1, custom: 0 });
+
+    const detail = new SkillService({ dataRoot, agentsHome, harnessRoot })
+      .detail("project-dsh:code-review");
+    expect(detail?.skill.name).toBe("code-review");
+    expect(detail?.markdown).toBe("# code-review");
   });
 
   it("imports a validated directory package into the user DSH skill root", () => {
@@ -168,5 +173,6 @@ describe("SkillService", () => {
     });
 
     expect(() => service.importSkill(source)).toThrow(/SKILL\.md/);
+    expect(service.detail("user-dsh:missing")).toBeUndefined();
   });
 });

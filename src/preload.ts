@@ -26,6 +26,7 @@ import type {
 } from "./appearance-types";
 import type {
   SkillCatalogSnapshot,
+  SkillDetail,
   SkillImportResult,
 } from "./skill-types";
 
@@ -87,12 +88,16 @@ const desktopBridge = {
     ipcRenderer.invoke("desktop:open-plugin-source", url),
   getSkills: (): Promise<SkillCatalogSnapshot> =>
     ipcRenderer.invoke("desktop:get-skills"),
+  getSkillDetail: (skillId: string): Promise<SkillDetail | undefined> =>
+    ipcRenderer.invoke("desktop:get-skill-detail", skillId),
   importSkill: (): Promise<SkillImportResult | undefined> =>
     ipcRenderer.invoke("desktop:import-skill"),
   openSkillsDirectory: (): Promise<boolean> =>
     ipcRenderer.invoke("desktop:open-skills-directory"),
-  openSkill: (skillId: string): Promise<boolean> =>
+  openSkillFile: (skillId: string): Promise<boolean> =>
     ipcRenderer.invoke("desktop:open-skill", skillId),
+  openSkillDirectory: (skillId: string): Promise<boolean> =>
+    ipcRenderer.invoke("desktop:open-skill-directory", skillId),
   getUpdateStates: (): Promise<UpdateStates> => ipcRenderer.invoke("desktop:get-update-states"),
   checkClientUpdate: (): Promise<DesktopUpdateState> =>
     ipcRenderer.invoke("desktop:check-client-update"),

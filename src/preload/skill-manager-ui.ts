@@ -1,15 +1,18 @@
 import type {
   SkillCatalogEntry,
   SkillCatalogSnapshot,
+  SkillDetail,
   SkillImportResult,
 } from "../skill-types";
 import { filterSkillEntries, invocationLabel } from "./skill-presentation";
 
 export interface SkillDesktopApi {
   getSkills(): Promise<SkillCatalogSnapshot>;
+  getSkillDetail(skillId: string): Promise<SkillDetail | undefined>;
   importSkill(): Promise<SkillImportResult | undefined>;
   openSkillsDirectory(): Promise<boolean>;
-  openSkill(skillId: string): Promise<boolean>;
+  openSkillFile(skillId: string): Promise<boolean>;
+  openSkillDirectory(skillId: string): Promise<boolean>;
 }
 
 interface SettingsShell {
@@ -23,6 +26,9 @@ interface ViewState {
   query: string;
   loading: boolean;
   busy: boolean;
+  selectedSkillId?: string;
+  detail?: SkillDetail;
+  detailLoading: boolean;
   notice?: { tone: "success" | "error"; message: string };
 }
 
@@ -229,7 +235,7 @@ function createPanel(
   api: SkillDesktopApi,
   icons: NativeSkillIcons,
 ): void {
-  const state: ViewState = { query: "", loading: false, busy: false };
+  const state: ViewState = { query: "", loading: false, busy: false, detailLoading: false };
   const style = document.createElement("style");
   style.textContent = skillStyles();
   const root = document.createElement("div");
@@ -253,7 +259,13 @@ function createPanel(
     search.setAttribute("aria-label", "搜索 Skill");
     search.addEventListener("input", () => {
       state.query = search.value;
-      renderCatalog();
+      if (state.selectedSkillId) {
+        state.selectedSkillId = undefined;
+        state.detail = undefined;
+        render();
+      } else {
+        renderCatalog();
+      }
     });
 
     const catalog = document.createElement("section");
@@ -300,22 +312,29 @@ function createPanel(
     actions.append(importButton, directoryButton);
     catalogHeader.append(catalogIdentity, actions);
 
+    const catalogBody = document.createElement("div");
+    catalogBody.className = "catalog-body";
     const cards = document.createElement("div");
     cards.className = "skill-grid";
     cards.setAttribute("data-testid", "skill-grid");
-    catalog.append(catalogHeader, cards);
+    catalogBody.append(cards);
+    catalog.append(catalogHeader, catalogBody);
 
     if (state.notice) {
       const notice = document.createElement("div");
       notice.className = `notice ${state.notice.tone}`;
       notice.textContent = state.notice.message;
-      catalog.insertBefore(notice, cards);
+      catalog.insertBefore(notice, catalogBody);
     }
 
     root.append(header, search, catalog);
     const renderCatalog = (): void => {
       count.textContent = String(state.snapshot?.skills.length ?? 0);
+      catalog.classList.toggle("detail-open", Boolean(state.selectedSkillId));
+      catalogBody.classList.toggle("detail-open", Boolean(state.selectedSkillId));
+      cards.classList.toggle("compact", Boolean(state.selectedSkillId));
       cards.replaceChildren();
+      catalogBody.querySelector(".skill-detail")?.remove();
       if (state.loading) {
         cards.append(emptyState("正在读取 Skills…"));
         return;
@@ -325,7 +344,40 @@ function createPanel(
         cards.append(emptyState(state.query ? "没有找到匹配的 Skill" : "当前没有可用的 Skill"));
         return;
       }
-      visible.forEach((skill) => cards.append(skillCard(skill, icons, api, state, render)));
+      const selectSkill = async (skill: SkillCatalogEntry): Promise<void> => {
+        state.selectedSkillId = skill.id;
+        state.detail = undefined;
+        state.detailLoading = true;
+        state.notice = undefined;
+        render();
+        try {
+          const detail = await api.getSkillDetail(skill.id);
+          if (!detail) throw new Error("无法读取该 Skill 的详情");
+          state.detail = detail;
+        } catch (error) {
+          state.notice = { tone: "error", message: errorMessage(error) };
+        } finally {
+          state.detailLoading = false;
+          render();
+        }
+      };
+      visible.forEach((skill) => cards.append(skillCard(
+        skill,
+        icons,
+        () => void selectSkill(skill),
+        state.selectedSkillId === skill.id,
+      )));
+      if (state.selectedSkillId) {
+        const detail = skillDetailPane(state, api, () => {
+          state.selectedSkillId = undefined;
+          state.detail = undefined;
+          render();
+        }, (error) => {
+          state.notice = { tone: "error", message: errorMessage(error) };
+          render();
+        });
+        catalogBody.append(detail);
+      }
     };
     renderCatalog();
   };
@@ -350,16 +402,17 @@ function createPanel(
 function skillCard(
   skill: SkillCatalogEntry,
   icons: NativeSkillIcons,
-  api: SkillDesktopApi,
-  state: ViewState,
-  rerender: () => void,
+  select: () => void,
+  selected: boolean,
 ): HTMLButtonElement {
   const card = document.createElement("button");
   card.type = "button";
   card.className = "skill-card";
   card.dataset.skillId = skill.id;
   card.title = `${skill.sourcePath}\n${skill.filePath}`;
-  card.setAttribute("aria-label", `打开 ${skill.name}`);
+  card.classList.toggle("selected", selected);
+  card.setAttribute("aria-label", `查看 ${skill.name}`);
+  card.setAttribute("aria-pressed", String(selected));
 
   const iconMarkup = skill.source.startsWith("project-")
     ? icons.project
@@ -401,17 +454,188 @@ function skillCard(
 
   const open = document.createElement("span");
   open.className = "open-label";
-  open.textContent = "打开";
+  open.textContent = "查看";
   card.append(open);
-  card.addEventListener("click", async () => {
+  card.addEventListener("click", select);
+  return card;
+}
+
+function skillDetailPane(
+  state: ViewState,
+  api: SkillDesktopApi,
+  close: () => void,
+  reportError: (error: unknown) => void,
+): HTMLElement {
+  const pane = document.createElement("article");
+  pane.className = "skill-detail";
+  pane.setAttribute("data-testid", "skill-detail");
+  if (state.detailLoading) {
+    pane.append(emptyState("正在读取 Skill 详情…"));
+    return pane;
+  }
+  if (!state.detail) {
+    pane.append(emptyState("暂时无法显示 Skill 详情"));
+    return pane;
+  }
+
+  const { skill, markdown } = state.detail;
+  const header = document.createElement("header");
+  header.className = "detail-header";
+  const identity = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = skill.name;
+  const description = document.createElement("p");
+  description.textContent = skill.description;
+  identity.append(title, description);
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "detail-close";
+  closeButton.textContent = "返回列表";
+  closeButton.addEventListener("click", close);
+  header.append(identity, closeButton);
+
+  const metadata = document.createElement("dl");
+  metadata.className = "detail-meta";
+  appendMetadata(metadata, "来源", `${skill.sourceLabel} · ${skill.sourcePath}`);
+  appendMetadata(metadata, "调用", invocationLabel(skill));
+  if (skill.whenToUse) appendMetadata(metadata, "适用场景", skill.whenToUse);
+
+  const content = document.createElement("section");
+  content.className = "detail-content";
+  const contentTitle = document.createElement("strong");
+  contentTitle.textContent = "说明";
+  const markdownView = renderMarkdown(markdown || skill.description);
+  content.append(contentTitle, markdownView);
+
+  const footer = document.createElement("footer");
+  footer.className = "detail-actions";
+  const editButton = actionButton("编辑 SKILL.md", async () => {
     try {
-      await api.openSkill(skill.id);
+      await api.openSkillFile(skill.id);
     } catch (error) {
-      state.notice = { tone: "error", message: errorMessage(error) };
-      rerender();
+      reportError(error);
     }
   });
-  return card;
+  const directoryButton = actionButton("打开所在目录", async () => {
+    try {
+      await api.openSkillDirectory(skill.id);
+    } catch (error) {
+      reportError(error);
+    }
+  });
+  footer.append(editButton, directoryButton);
+  pane.append(header, metadata, content, footer);
+  return pane;
+}
+
+function appendMetadata(list: HTMLDListElement, label: string, value: string): void {
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value;
+  list.append(term, description);
+}
+
+function renderMarkdown(markdown: string): HTMLElement {
+  const viewer = document.createElement("div");
+  viewer.className = "markdown-view";
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const fence = /^```\s*([^\s]*)/.exec(line);
+    if (fence) {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^```/.test(lines[index] ?? "")) {
+        codeLines.push(lines[index] ?? "");
+        index += 1;
+      }
+      index += 1;
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = codeLines.join("\n");
+      pre.append(code);
+      viewer.append(pre);
+      continue;
+    }
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    if (heading) {
+      const level = Math.min(4, heading[1]!.length + 2);
+      const element = document.createElement(`h${level}`);
+      appendInline(element, heading[2]!);
+      viewer.append(element);
+      index += 1;
+      continue;
+    }
+    if (/^[-*+]\s+/.test(line)) {
+      const list = document.createElement("ul");
+      while (index < lines.length && /^[-*+]\s+/.test(lines[index] ?? "")) {
+        const item = document.createElement("li");
+        appendInline(item, (lines[index] ?? "").replace(/^[-*+]\s+/, ""));
+        list.append(item);
+        index += 1;
+      }
+      viewer.append(list);
+      continue;
+    }
+    if (/^\d+\.\s+/.test(line)) {
+      const list = document.createElement("ol");
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index] ?? "")) {
+        const item = document.createElement("li");
+        appendInline(item, (lines[index] ?? "").replace(/^\d+\.\s+/, ""));
+        list.append(item);
+        index += 1;
+      }
+      viewer.append(list);
+      continue;
+    }
+    if (/^>\s?/.test(line)) {
+      const quote = document.createElement("blockquote");
+      appendInline(quote, line.replace(/^>\s?/, ""));
+      viewer.append(quote);
+      index += 1;
+      continue;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      viewer.append(document.createElement("hr"));
+      index += 1;
+      continue;
+    }
+    const paragraphLines = [line.trim()];
+    index += 1;
+    while (index < lines.length && lines[index]!.trim() && !isMarkdownBlockStart(lines[index]!)) {
+      paragraphLines.push(lines[index]!.trim());
+      index += 1;
+    }
+    const paragraph = document.createElement("p");
+    appendInline(paragraph, paragraphLines.join(" "));
+    viewer.append(paragraph);
+  }
+  return viewer;
+}
+
+function isMarkdownBlockStart(line: string): boolean {
+  return /^(#{1,4}\s+|```|[-*+]\s+|\d+\.\s+|>\s?|-{3,}\s*$|\*{3,}\s*$|_{3,}\s*$)/.test(line);
+}
+
+function appendInline(target: HTMLElement, value: string): void {
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let cursor = 0;
+  for (const match of value.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    if (start > cursor) target.append(document.createTextNode(value.slice(cursor, start)));
+    const token = match[0];
+    const element = document.createElement(token.startsWith("`") ? "code" : "strong");
+    element.textContent = token.startsWith("`") ? token.slice(1, -1) : token.slice(2, -2);
+    target.append(element);
+    cursor = start + token.length;
+  }
+  if (cursor < value.length) target.append(document.createTextNode(value.slice(cursor)));
 }
 
 function actionButton(label: string, action: () => Promise<void>): HTMLButtonElement {
@@ -575,6 +799,13 @@ function skillStyles(): string {
     .notice { flex:0 0 auto; margin-top:10px; padding:8px 10px; border-radius:8px; font-size:12px; }
     .notice.success { color:#137a44; background:#eefaf3; }
     .notice.error { color:#b42318; background:#fff1f0; }
+    .catalog-body { flex:1 1 auto; min-height:0; display:flex; }
+    .catalog-body.detail-open {
+      display:grid;
+      grid-template-columns:minmax(210px,.72fr) minmax(0,1.28fr);
+      gap:12px;
+      margin-top:13px;
+    }
     .skill-grid {
       flex:1 1 auto;
       min-height:0;
@@ -589,6 +820,8 @@ function skillStyles(): string {
       scrollbar-width:thin;
       scrollbar-color:rgba(120,120,128,.48) transparent;
     }
+    .catalog-body.detail-open .skill-grid { margin-top:0; padding-bottom:8px; }
+    .skill-grid.compact { grid-template-columns:1fr; gap:7px; padding-right:4px; }
     .skill-grid::-webkit-scrollbar { width:6px; }
     .skill-grid::-webkit-scrollbar-track { background:transparent; }
     .skill-grid::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(120,120,128,.48); }
@@ -609,7 +842,20 @@ function skillStyles(): string {
     }
     .skill-card.no-icon { grid-template-columns:minmax(0,1fr) auto; }
     .skill-card:hover { border-color:#cbd2df; background:#fafbfc; }
+    .skill-card.selected { border-color:#9fb5da; background:#f4f7fc; }
     .skill-card:focus-visible { outline:2px solid #6b95e8; outline-offset:1px; }
+    .skill-grid.compact .skill-card {
+      min-height:76px;
+      grid-template-columns:34px minmax(0,1fr) auto;
+      gap:9px;
+      padding:10px;
+      border-radius:10px;
+    }
+    .skill-grid.compact .skill-card.no-icon { grid-template-columns:minmax(0,1fr) auto; }
+    .skill-grid.compact .skill-icon { width:34px; height:34px; border-radius:9px; }
+    .skill-grid.compact .skill-icon svg { width:18px; height:18px; }
+    .skill-grid.compact .skill-description { display:none; }
+    .skill-grid.compact .skill-badges { margin-top:5px; }
     .skill-icon {
       width:42px;
       height:42px;
@@ -639,19 +885,94 @@ function skillStyles(): string {
     .badge.invocation { color:#18724a; background:#edf8f1; }
     .open-label { color:#777780; font-size:11px; }
     .empty { grid-column:1/-1; padding:80px 18px; color:#8b8b94; text-align:center; }
+    .skill-detail {
+      min-width:0;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+      border:1px solid #e1e2e6;
+      border-radius:12px;
+      background:#fff;
+    }
+    .detail-header {
+      flex:0 0 auto;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:18px 18px 14px;
+      border-bottom:1px solid #e7e8eb;
+    }
+    .detail-header > div { min-width:0; }
+    .detail-header h3 { margin:0; overflow-wrap:anywhere; font-size:19px; line-height:1.35; }
+    .detail-header p { margin:6px 0 0; color:#777780; font-size:13px; line-height:1.55; }
+    .detail-close {
+      flex:0 0 auto;
+      padding:6px 9px;
+      border:0;
+      border-radius:7px;
+      color:#707078;
+      background:transparent;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .detail-close:hover { background:#f1f2f4; }
+    .detail-meta {
+      flex:0 0 auto;
+      display:grid;
+      grid-template-columns:58px minmax(0,1fr);
+      gap:9px 12px;
+      margin:0;
+      padding:14px 18px;
+      border-bottom:1px solid #e7e8eb;
+      font-size:12px;
+    }
+    .detail-meta dt { color:#8a8a93; }
+    .detail-meta dd { min-width:0; margin:0; overflow-wrap:anywhere; }
+    .detail-content { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; padding:14px 18px 0; }
+    .detail-content > strong { flex:0 0 auto; font-size:14px; }
+    .markdown-view {
+      flex:1 1 auto;
+      min-height:0;
+      margin-top:9px;
+      padding:0 7px 14px 0;
+      overflow:auto;
+      color:#4f4f57;
+      font-size:12px;
+      line-height:1.65;
+      scrollbar-width:thin;
+      scrollbar-color:rgba(120,120,128,.48) transparent;
+    }
+    .markdown-view::-webkit-scrollbar { width:6px; }
+    .markdown-view::-webkit-scrollbar-track { background:transparent; }
+    .markdown-view::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(120,120,128,.48); }
+    .markdown-view h3,.markdown-view h4,.markdown-view h5,.markdown-view h6 { margin:14px 0 6px; color:inherit; line-height:1.4; }
+    .markdown-view h3 { font-size:15px; }
+    .markdown-view h4 { font-size:14px; }
+    .markdown-view h5,.markdown-view h6 { font-size:13px; }
+    .markdown-view p { margin:0 0 9px; }
+    .markdown-view ul,.markdown-view ol { margin:0 0 9px; padding-left:20px; }
+    .markdown-view blockquote { margin:0 0 9px; padding:7px 10px; border-left:3px solid #b8c5da; color:#6d6d76; background:#f6f7f9; }
+    .markdown-view pre { margin:0 0 10px; padding:10px; overflow:auto; border-radius:8px; background:#f4f5f7; font-size:11px; }
+    .markdown-view :not(pre) > code { padding:1px 4px; border-radius:4px; background:#f0f1f3; font-size:.94em; }
+    .markdown-view hr { height:1px; margin:14px 0; border:0; background:#e4e5e8; }
+    .detail-actions { flex:0 0 auto; display:flex; gap:8px; padding:12px 18px; border-top:1px solid #e7e8eb; }
     :host-context(body[data-ds-dark-theme]) {
       color:var(--dsw-alias-label-primary,#f4f4f5);
       color-scheme:dark;
     }
     :host-context(body[data-ds-dark-theme]) .skill-search,
     :host-context(body[data-ds-dark-theme]) .action,
-    :host-context(body[data-ds-dark-theme]) .skill-card {
+    :host-context(body[data-ds-dark-theme]) .skill-card,
+    :host-context(body[data-ds-dark-theme]) .skill-detail {
       border-color:rgba(255,255,255,.13);
       background:#29292c;
     }
     :host-context(body[data-ds-dark-theme]) .skill-search:focus { border-color:#7599d9; box-shadow:0 0 0 3px rgba(92,139,234,.13); }
     :host-context(body[data-ds-dark-theme]) .action:hover,
     :host-context(body[data-ds-dark-theme]) .skill-card:hover { border-color:rgba(255,255,255,.22); background:#303034; }
+    :host-context(body[data-ds-dark-theme]) .skill-card.selected { border-color:#607aa7; background:#30343b; }
     :host-context(body[data-ds-dark-theme]) .skill-icon { color:#a9c4f4; background:#333943; }
     :host-context(body[data-ds-dark-theme]) .skill-description,
     :host-context(body[data-ds-dark-theme]) .open-label { color:#a5a5ad; }
@@ -661,9 +982,27 @@ function skillStyles(): string {
     :host-context(body[data-ds-dark-theme]) .badge.invocation { color:#86ddb0; background:#263d32; }
     :host-context(body[data-ds-dark-theme]) .notice.success { color:#86ddb0; background:#263d32; }
     :host-context(body[data-ds-dark-theme]) .notice.error { color:#ffaaa4; background:#452b2b; }
+    :host-context(body[data-ds-dark-theme]) .detail-header,
+    :host-context(body[data-ds-dark-theme]) .detail-meta,
+    :host-context(body[data-ds-dark-theme]) .detail-actions { border-color:rgba(255,255,255,.10); }
+    :host-context(body[data-ds-dark-theme]) .detail-header p,
+    :host-context(body[data-ds-dark-theme]) .detail-meta dt,
+    :host-context(body[data-ds-dark-theme]) .markdown-view { color:#aaaab2; }
+    :host-context(body[data-ds-dark-theme]) .detail-close { color:#c0c0c7; }
+    :host-context(body[data-ds-dark-theme]) .detail-close:hover,
+    :host-context(body[data-ds-dark-theme]) .markdown-view blockquote,
+    :host-context(body[data-ds-dark-theme]) .markdown-view pre,
+    :host-context(body[data-ds-dark-theme]) .markdown-view :not(pre) > code { background:#333338; }
+    :host-context(body[data-ds-dark-theme]) .markdown-view blockquote { border-color:#546985; color:#b8b8c0; }
+    :host-context(body[data-ds-dark-theme]) .markdown-view hr { background:rgba(255,255,255,.10); }
     @media (max-width:1100px) {
       .skill-root { padding-right:14px; }
       .skill-grid { grid-template-columns:1fr; }
+    }
+    @media (max-width:900px) {
+      .catalog-body.detail-open { grid-template-columns:1fr; }
+      .catalog-body.detail-open .skill-grid { max-height:190px; }
+      .skill-detail { min-height:340px; }
     }
   `;
 }

@@ -3,6 +3,8 @@ const { writeFileSync } = require("node:fs");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const screenshotPath = process.env.DSH_SKILLS_SCREENSHOT;
+let openedSkillFiles = 0;
+let openedSkillDirectories = 0;
 
 const skills = [
   ["code-review", "审查代码变更并提供改进建议。", "项目", "project-dsh", true, true],
@@ -32,10 +34,10 @@ const snapshot = () => ({
   sourceCounts: { project: 2, user: 3, custom: 0, bundled: 3 },
 });
 
-ipcMain.handle("desktop:get-meta", () => ({ version: "0.8.8" }));
+ipcMain.handle("desktop:get-meta", () => ({ version: "0.9.1" }));
 ipcMain.handle("desktop:get-window-state", () => ({ maximized: false }));
 ipcMain.handle("desktop:get-update-states", () => ({
-  desktop: { phase: "up-to-date", currentVersion: "0.8.8", supported: true },
+  desktop: { phase: "up-to-date", currentVersion: "0.9.1", supported: true },
   harness: { phase: "up-to-date", currentVersion: "0.1.0-rc.6", supported: true },
 }));
 ipcMain.handle("desktop:get-appearance", () => ({
@@ -53,9 +55,17 @@ ipcMain.handle("desktop:get-plugin-market", () => ({
   installedCount: 0, restartRequired: false, restartSupported: true,
 }));
 ipcMain.handle("desktop:get-skills", () => snapshot());
+ipcMain.handle("desktop:get-skill-detail", (_event, skillId) => {
+  const skill = skills.find((entry) => entry.id === skillId);
+  return skill ? {
+    skill,
+    markdown: `# ${skill.name}\n\n${skill.description}\n\n## 使用建议\n\n- 先阅读适用场景\n- 再在对话中调用`,
+  } : undefined;
+});
 ipcMain.handle("desktop:import-skill", () => undefined);
 ipcMain.handle("desktop:open-skills-directory", () => true);
-ipcMain.handle("desktop:open-skill", () => true);
+ipcMain.handle("desktop:open-skill", () => { openedSkillFiles += 1; return true; });
+ipcMain.handle("desktop:open-skill-directory", () => { openedSkillDirectories += 1; return true; });
 ipcMain.on("desktop:workspace-interaction", () => undefined);
 ipcMain.on("desktop:minimize", () => undefined);
 ipcMain.on("desktop:toggle-maximize", () => undefined);
@@ -145,12 +155,43 @@ app.whenReady().then(async () => {
     };
   })()`);
 
+  await window.webContents.executeJavaScript(`
+    document.querySelector('[data-dsh-skills-panel]').shadowRoot.querySelector('.skill-card').click()
+  `);
+  await waitFor(window, `document.querySelector('[data-dsh-skills-panel]')?.shadowRoot?.querySelector('.skill-detail .markdown-view')`);
+  const detailState = await window.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('[data-dsh-skills-panel]').shadowRoot;
+    const detail = root.querySelector('.skill-detail');
+    const selected = root.querySelector('.skill-card.selected');
+    return {
+      visible: Boolean(detail),
+      selected: selected?.dataset.skillId,
+      title: detail?.querySelector('h3')?.textContent?.trim(),
+      markdownHeading: detail?.querySelector('.markdown-view h3')?.textContent?.trim(),
+      actions: [...detail.querySelectorAll('.detail-actions button')].map(el => el.textContent?.trim()),
+      horizontalOverflow: detail.scrollWidth - detail.clientWidth,
+    };
+  })()`);
+
   if (screenshotPath) {
     window.showInactive();
     await new Promise((resolve) => setTimeout(resolve, 250));
     writeFileSync(screenshotPath, (await window.webContents.capturePage()).toPNG());
     window.hide();
   }
+
+  await window.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('[data-dsh-skills-panel]').shadowRoot;
+    const buttons = [...root.querySelectorAll('.detail-actions button')];
+    buttons[0].click();
+    buttons[1].click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const externalActions = { openedSkillFiles, openedSkillDirectories };
+
+  await window.webContents.executeJavaScript(`
+    document.querySelector('[data-dsh-skills-panel]').shadowRoot.querySelector('.detail-close').click()
+  `);
 
   const searchResult = await window.webContents.executeJavaScript(`(() => {
     const root = document.querySelector('[data-dsh-skills-panel]').shadowRoot;
@@ -179,11 +220,14 @@ app.whenReady().then(async () => {
   if (!regression.rootWithinModal || regression.horizontalOverflow > 1) problems.push(`layout overflow: ${JSON.stringify(regression)}`);
   if (!regression.sourceLabels.includes("项目") || !regression.sourceLabels.includes("用户") || !regression.sourceLabels.includes("内置")) problems.push(`source labels: ${JSON.stringify(regression.sourceLabels)}`);
   if (!regression.invocationLabels.includes("仅用户") || !regression.invocationLabels.includes("仅模型")) problems.push(`invocation labels: ${JSON.stringify(regression.invocationLabels)}`);
+  if (!detailState.visible || detailState.selected !== "project-dsh:code-review" || detailState.title !== "code-review" || detailState.markdownHeading !== "code-review") problems.push(`detail state: ${JSON.stringify(detailState)}`);
+  if (detailState.actions.join("|") !== "编辑 SKILL.md|打开所在目录" || detailState.horizontalOverflow > 1) problems.push(`detail actions/layout: ${JSON.stringify(detailState)}`);
+  if (externalActions.openedSkillFiles !== 1 || externalActions.openedSkillDirectories !== 1) problems.push(`external actions: ${JSON.stringify(externalActions)}`);
   if (searchResult.length !== 1 || searchResult[0] !== "release-notes") problems.push(`search result: ${JSON.stringify(searchResult)}`);
   if (!isolation.skillsHidden || !isolation.pluginHeadingVisible || !isolation.appearanceStillPresent) problems.push(`page isolation: ${JSON.stringify(isolation)}`);
   if (problems.length) throw new Error(`Skills UI regression: ${problems.join('; ')}`);
 
-  console.log(JSON.stringify({ nativeHeading, regression, searchResult, isolation }));
+  console.log(JSON.stringify({ nativeHeading, regression, detailState, externalActions, searchResult, isolation }));
   window.destroy();
   app.quit();
 }).catch((error) => {
