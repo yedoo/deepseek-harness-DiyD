@@ -73,44 +73,11 @@ const DEFAULT_CONFIG: AppearanceConfig = {
   assets: {},
 };
 
-const BUILTIN_THEMES: AppearanceTheme[] = [
-  builtinTheme("builtin-light", "简洁明亮", "light", {
-    surface: "#ffffff",
-    sidebar: "#f7f8fa",
-    text: "#18181b",
-    accent: "#3b82f6",
-  }),
-  builtinTheme("builtin-dark", "深色工作台", "dark", {
-    surface: "#1b1c20",
-    sidebar: "#15161a",
-    text: "#f4f4f5",
-    accent: "#7aa2ff",
-  }),
-  builtinTheme("builtin-deep-sea", "深海蓝", "dark", {
-    surface: "#10182b",
-    sidebar: "#0b1222",
-    text: "#eef4ff",
-    accent: "#77aaff",
-  }),
-];
-
-function builtinTheme(
-  id: string,
-  name: string,
-  mode: "light" | "dark",
-  colors: AppearanceConfig["colors"],
-): AppearanceTheme {
-  return {
-    id,
-    name,
-    author: "DeepSeek Harness Desktop",
-    version: "1.0.0",
-    kind: "builtin",
-    createdAt: "2026-08-17T00:00:00.000Z",
-    updatedAt: "2026-08-17T00:00:00.000Z",
-    config: { ...structuredClone(DEFAULT_CONFIG), mode, colors },
-  };
-}
+const LEGACY_BUILTIN_THEME_IDS = new Set([
+  "builtin-light",
+  "builtin-dark",
+  "builtin-deep-sea",
+]);
 
 function clamp(value: unknown, minimum: number, maximum: number, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -177,7 +144,6 @@ function mergeConfig(base: AppearanceConfig, patch?: AppearanceConfigPatch): App
 function defaultSettings(): AppearanceSettings {
   return {
     ...structuredClone(DEFAULT_CONFIG),
-    activeThemeId: "builtin-light",
     providers: {},
     overrides: {},
   };
@@ -205,7 +171,7 @@ export class AppearanceService {
   snapshot(providers: AppearanceProviderDescriptor[] = []): AppearanceSnapshot {
     return {
       settings: structuredClone(this.state.settings),
-      themes: [...structuredClone(BUILTIN_THEMES), ...structuredClone(this.state.themes)],
+      themes: structuredClone(this.state.themes),
       providers: structuredClone(providers),
     };
   }
@@ -309,9 +275,6 @@ export class AppearanceService {
   }
 
   deleteTheme(themeId: string): void {
-    if (BUILTIN_THEMES.some((theme) => theme.id === themeId)) {
-      throw new Error("内置主题不能删除");
-    }
     const before = this.state.themes.length;
     this.state.themes = this.state.themes.filter((theme) => theme.id !== themeId);
     if (this.state.themes.length === before) {
@@ -320,8 +283,7 @@ export class AppearanceService {
     if (this.state.settings.activeThemeId === themeId) {
       this.state.settings = {
         ...this.state.settings,
-        ...structuredClone(BUILTIN_THEMES[0]!.config),
-        activeThemeId: "builtin-light",
+        activeThemeId: undefined,
         overrides: {},
       };
     }
@@ -436,7 +398,7 @@ export class AppearanceService {
   }
 
   private findTheme(themeId: string): AppearanceTheme {
-    const theme = [...BUILTIN_THEMES, ...this.state.themes].find((candidate) => candidate.id === themeId);
+    const theme = this.state.themes.find((candidate) => candidate.id === themeId);
     if (!theme) {
       throw new Error("主题不存在");
     }
@@ -521,23 +483,38 @@ export class AppearanceService {
     try {
       const raw = JSON.parse(readFileSync(this.statePath, "utf8")) as Partial<AppearanceState>;
       const settings = defaultSettings();
+      const themes = Array.isArray(raw.themes)
+        ? raw.themes.filter((theme) => theme.kind !== "builtin")
+        : [];
       const storedSettings = raw.settings;
       if (storedSettings) {
         Object.assign(settings, mergeConfig(settings, storedSettings));
-        settings.activeThemeId = typeof storedSettings.activeThemeId === "string"
+        const storedThemeId = typeof storedSettings.activeThemeId === "string"
           ? storedSettings.activeThemeId
-          : settings.activeThemeId;
+          : undefined;
+        const legacyBuiltinTheme = Boolean(storedThemeId && LEGACY_BUILTIN_THEME_IDS.has(storedThemeId));
+        settings.activeThemeId = storedThemeId && themes.some((theme) => theme.id === storedThemeId)
+          ? storedThemeId
+          : undefined;
         settings.providers = storedSettings.providers && typeof storedSettings.providers === "object"
           ? storedSettings.providers
           : {};
-        settings.overrides = storedSettings.overrides && typeof storedSettings.overrides === "object"
+        const storedOverrides = storedSettings.overrides && typeof storedSettings.overrides === "object"
           ? storedSettings.overrides
           : {};
+        if (legacyBuiltinTheme) {
+          const { mode: _legacyMode, colors: _legacyColors, ...preservedOverrides } = storedOverrides;
+          settings.mode = "system";
+          settings.colors = {};
+          settings.overrides = preservedOverrides;
+        } else {
+          settings.overrides = storedOverrides;
+        }
       }
       return {
         schemaVersion: 1,
         settings,
-        themes: Array.isArray(raw.themes) ? raw.themes.filter((theme) => theme.kind !== "builtin") : [],
+        themes,
         assets: raw.assets && typeof raw.assets === "object" ? raw.assets : {},
       };
     } catch {

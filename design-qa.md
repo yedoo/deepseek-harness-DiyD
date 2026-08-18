@@ -1,46 +1,60 @@
-# Appearance settings design QA
+# Appearance and plugin-market dark-mode design QA
 
-- Source visual truth: `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-889963da-daa0-45f8-8313-bac9166954cd.png`
-- Source control detail: `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-b14f3f4d-e271-4904-9a8e-5597ec8a0b3f.png`
-- Same-build native reference: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.7\native-model.png`
-- Implementation screenshot: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.7\appearance.png`
-- Full-view comparison: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.7\native-vs-appearance-full.png`
-- Focused header comparison: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.7\native-vs-appearance-header.png`
-- Viewport: 1141 × 1062 CSS px, Windows device scale factor 1.25
-- Pixel dimensions: native reference 1429 × 1330 px; implementation 1429 × 1330 px; no density normalization was needed for the same-build comparison
-- State: desktop settings modal, dark mode, native Model page compared with Appearance page
+- User issue sources:
+  - `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-899ad803-4414-413f-b3a7-7c7e64b0680e.png` — three nonfunctional built-in presets
+  - `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-c4cb3a5e-9496-4ec7-a567-b7e9238e3e7e.png` — asset-slot copy stuck to the top edge
+  - `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-ed43452a-725b-45d4-afe1-bd1175e6c824.png` — white theme-name input in dark mode
+  - `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-dd9e8477-ee23-4b61-b51e-0c220712e609.png` — Wallpaper Engine selector overflowing the right edge
+  - `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-1d629aba-5c8e-4f57-bf5d-222a4fa3a275.png` — white marketplace controls in dark mode
+- Native dark reference: `C:\Users\TianYe\AppData\Local\Temp\codex-clipboard-56ffa66b-ee98-4d38-87c0-c9b2a5913ed4.png`
+- Implementation screenshots:
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\appearance-themes.png`
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\appearance-editor.png`
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\appearance-settings.png`
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\plugin-market-dark-clean.png`
+- Combined evidence:
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\appearance-comparison.png`
+  - `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\plugin-market-comparison.png`
+- Same-build native regression screenshot: `C:\Users\TianYe\AppData\Local\Temp\dsh-design-qa-v0.8.8\native-model.png`
+- Appearance viewport: 1141 × 1062 CSS px at Windows device scale factor 1.25; screenshots are 1429 × 1330 px.
+- Marketplace fixture viewport: 1752 × 1128 CSS px at Windows device scale factor 1.25; screenshot is 2192 × 1413 px.
+- State: Windows desktop settings modal, Harness dark mode, Appearance custom pages and Plugin Market selected.
 
 ## Full-view comparison evidence
 
-The same-build side-by-side comparison shows that the Appearance page preserves the native modal bounds, navigation geometry, content grid, header position, and right edge. Only the Appearance Shadow DOM changes; native General, Model, Plugins, and Agent Presets pages remain untouched. The Appearance page remains vertically scrollable with no visible scrollbar track or thumb.
+The combined Appearance board compares each reported defect with its corrected state. “My Themes” now contains only real user-created or imported `.dsh-theme` packages. The Theme Editor keeps the native modal geometry while rendering the name input with a dark control surface. The Wallpaper Engine selector remains fully inside its provider panel.
 
-## Focused region comparison evidence
+The combined Plugin Market board compares the former white controls, the official dark plugin-list reference, and the corrected marketplace. Search, sort, cards, dialogs, badges, buttons, and empty/loading surfaces now react to the actual `data-ds-dark-theme` state used by Harness instead of the operating-system color preference.
 
-The combined header crop and live computed-style checks verify the typography and controls that were visibly drifting:
+## Focused and computed evidence
 
-- Native and Appearance heading: top 54px, left 212px, font family `-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Helvetica Neue, Helvetica, Arial, sans-serif`, font size 16px, line height 24px, weight 500, normal letter spacing.
-- Native and Appearance description: top 90px, left 212px, the same native font family, font size 14px, line height 22px, weight 400.
-- Native and Appearance “打开配置文件” button: top 20px, right 50px, 93.6 × 28px, font size 12px, line height 18px, 14px radius, 10px horizontal padding, and the same native border/background/color tokens.
-- Native and Appearance close control: top 20px, right 14px, 28 × 28px; the Appearance control reuses the native SVG icon markup.
-- Appearance scroll container: `overflow-y: auto`, scrollbar width 0px, and bottom content remains reachable.
+- Removed presets: service snapshots and the rendered theme list both report zero built-in cards.
+- Theme migration: stored `builtin-light`, `builtin-dark`, and `builtin-deep-sea` selections migrate to native system appearance while preserving background-provider and effect settings.
+- Asset alignment: the first asset slot’s combined text center matches the slot center within 4 CSS px.
+- Theme-name input: computed background `rgb(36, 36, 39)` and foreground `rgb(244, 244, 245)`.
+- Wallpaper selector: computed right edge stays inside the provider-panel right edge; width is constrained by a `minmax(0, 1fr)` grid track.
+- Marketplace search: computed background `rgb(36, 36, 39)` and foreground `rgb(244, 244, 245)`.
+- Marketplace sort and cards: computed background `rgb(36, 36, 39)`.
+- Native-page isolation: same-build Model-page screenshot and computed native typography/header-control checks remain unchanged.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: passed; title, description, and header control inherit the native font family, size, weight, line height, and letter spacing.
-- Spacing and layout rhythm: passed; content insets and header-control geometry match the native page within 1px.
-- Colors and visual tokens: passed; the header button copies the native dark-mode foreground, transparent background, border color, and shadow values.
-- Image quality and asset fidelity: not applicable; no image asset was added or replaced.
-- Copy and content: passed; existing Appearance labels and copy are unchanged.
+- Fonts and typography: passed; custom-page titles, descriptions, header action, and close action retain the native inherited metrics.
+- Spacing and layout rhythm: passed; asset copy is centered, the provider control does not overflow, and modal right/bottom content remains reachable.
+- Colors and visual tokens: passed; custom controls use the Harness dark-state surface, text, border, and badge tokens.
+- Image quality and asset fidelity: not applicable; no user wallpaper or theme asset was replaced.
+- Copy and content: passed; fake preset names were removed while user theme creation/import affordances remain.
 
 ## Comparison history
 
-1. The previous v0.8.6 comparison fixed content position and scrollbar visibility, but the latest user capture exposed a P1 control mismatch and P2 typography drift. The Appearance page still declared its own Segoe-based font stack, while the native app used the platform/PingFang/Microsoft YaHei stack. Its configuration button rendered at 116 × 34px with 14px text instead of the native 93.6 × 28px control with 12px text.
-2. The Appearance-only integration now rejects unrelated section headings as typography sources, copies the active native page’s complete text metrics, resolves the native header controls at activation time, and mirrors their full computed styles. The close control also reuses the native SVG icon instead of a text approximation.
-3. The post-fix live comparison reports exact heading, description, configuration-button, and close-control metrics. Fixture and live regression checks pass, the scrollbar remains hidden, and no native settings page styles were modified.
+1. Initial evidence showed three built-in theme cards that did not provide a reliable applied state, vertically misaligned asset-slot text, white inputs/cards in dark mode, and a provider selector that could exceed the modal width.
+2. Service and UI changes removed the fake presets and added a migration for previously persisted built-in IDs. Appearance-only styles centered slot content, constrained provider controls, and inherited the real Harness dark state.
+3. Marketplace styles changed from `prefers-color-scheme` to the Harness body dark-state attribute. Fixture and live-server checks now report the same dark computed colors as the native plugin reference.
+4. The final combined boards were opened and inspected. No custom surface overlaps the modal boundary, no fake preset remains, and no white custom search/input/card surface remains in dark mode.
 
 ## Findings
 
-No actionable P0, P1, or P2 differences remain for the requested Appearance-page typography and header-control alignment.
+No actionable P0, P1, or P2 differences remain for the six reported defects. The light outer shell visible in the isolated marketplace fixture is test-fixture chrome; the marketplace Shadow DOM under test is dark, and the live Harness run confirms the same computed dark values inside the native dark modal.
 
 ## Follow-up polish
 

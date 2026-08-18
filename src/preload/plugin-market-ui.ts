@@ -294,24 +294,33 @@ function marketplaceStyles(): string {
       .avatar { width: 40px; height: 40px; }
       .sort { margin-left: 0; }
     }
-    @media (prefers-color-scheme: dark) {
-      :host { color: #f4f4f5; }
-      .search, .sort, .card, .dialog { border-color: #414147; color: #f4f4f5; background: #242427; }
-      .search::placeholder, .meta, .author, .description, .footer { color: #a1a1aa; }
-      .category { color: #c0c0c5; }
-      .category:hover, .category[data-active="true"] { color: #fff; background: #3a3a3f; }
-      .avatar { border-color: #45454b; background: #333338; }
-      .title { color: #f4f4f5; }
-      .badge, .remove, .command { color: #c0c0c5; background: #39393e; }
-      .toggle { border-color: #4a4a50; color: #d4d4d8; background: transparent; }
-      .badge[data-review="curated"] { color: #8bd6aa; background: #263b30; }
-      .badge[data-review="community"] { color: #e7bb67; background: #45371f; }
-      .install { color: #8db3ff; background: transparent; }
-      .empty, .loading { border-color: #45454b; color: #a1a1aa; background: #242427; }
-      .dialog p { color: #c0c0c5; }
-      .cancel { color: #f4f4f5; background: #3f3f46; }
-      .confirm { color: #18181b; background: #f4f4f5; }
-    }
+    :host-context(body[data-ds-dark-theme]) { color: #f4f4f5; }
+    :host-context(body[data-ds-dark-theme]) .search,
+    :host-context(body[data-ds-dark-theme]) .sort,
+    :host-context(body[data-ds-dark-theme]) .card,
+    :host-context(body[data-ds-dark-theme]) .dialog { border-color: #414147; color: #f4f4f5; background: #242427; color-scheme: dark; }
+    :host-context(body[data-ds-dark-theme]) .search::placeholder,
+    :host-context(body[data-ds-dark-theme]) .meta,
+    :host-context(body[data-ds-dark-theme]) .author,
+    :host-context(body[data-ds-dark-theme]) .description,
+    :host-context(body[data-ds-dark-theme]) .footer { color: #a1a1aa; }
+    :host-context(body[data-ds-dark-theme]) .category { color: #c0c0c5; }
+    :host-context(body[data-ds-dark-theme]) .category:hover,
+    :host-context(body[data-ds-dark-theme]) .category[data-active="true"] { color: #fff; background: #3a3a3f; }
+    :host-context(body[data-ds-dark-theme]) .avatar { border-color: #45454b; background: #333338; }
+    :host-context(body[data-ds-dark-theme]) .title { color: #f4f4f5; }
+    :host-context(body[data-ds-dark-theme]) .badge,
+    :host-context(body[data-ds-dark-theme]) .remove,
+    :host-context(body[data-ds-dark-theme]) .command { color: #c0c0c5; background: #39393e; }
+    :host-context(body[data-ds-dark-theme]) .toggle { border-color: #4a4a50; color: #d4d4d8; background: transparent; }
+    :host-context(body[data-ds-dark-theme]) .badge[data-review="curated"] { color: #8bd6aa; background: #263b30; }
+    :host-context(body[data-ds-dark-theme]) .badge[data-review="community"] { color: #e7bb67; background: #45371f; }
+    :host-context(body[data-ds-dark-theme]) .install { color: #8db3ff; background: transparent; }
+    :host-context(body[data-ds-dark-theme]) .empty,
+    :host-context(body[data-ds-dark-theme]) .loading { border-color: #45454b; color: #a1a1aa; background: #242427; }
+    :host-context(body[data-ds-dark-theme]) .dialog p { color: #c0c0c5; }
+    :host-context(body[data-ds-dark-theme]) .cancel { color: #f4f4f5; background: #3f3f46; }
+    :host-context(body[data-ds-dark-theme]) .confirm { color: #18181b; background: #f4f4f5; }
   `;
 }
 
