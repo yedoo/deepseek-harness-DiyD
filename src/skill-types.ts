@@ -35,3 +35,8 @@ export interface SkillImportResult {
   imported: SkillCatalogEntry;
   snapshot: SkillCatalogSnapshot;
 }
+
+export interface SkillDetail {
+  skill: SkillCatalogEntry;
+  markdown: string;
+}
