@@ -17,6 +17,7 @@ interface ArboristConstructor {
     fund: boolean;
     cache?: string;
     preferOffline?: boolean;
+    legacyPeerDeps?: boolean;
   }): ArboristInstance;
 }
 
@@ -131,6 +132,7 @@ export async function runPluginPackageOperation(
     fund: false,
     cache: cachePath,
     preferOffline: true,
+    legacyPeerDeps: true,
   });
 
   try {
@@ -157,15 +159,48 @@ export async function runPluginPackageOperation(
   }
 }
 
+export async function synchronizeHarnessProfilePackages(
+  profileDirectory: string,
+  targetVersion: string,
+  cachePath?: string,
+): Promise<PluginPackageOperationResult> {
+  if (!path.isAbsolute(profileDirectory)) {
+    throw new Error("Harness profile 路径必须是绝对路径");
+  }
+  if (!targetVersion || /[\r\n]/.test(targetVersion)) {
+    throw new Error("Harness 目标版本无效");
+  }
+  const manifestPath = path.join(profileDirectory, "package.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error("Harness Web profile 尚未初始化");
+  }
+  const arborist = new Arborist({
+    path: profileDirectory,
+    audit: false,
+    fund: false,
+    cache: cachePath,
+    preferOffline: true,
+    legacyPeerDeps: true,
+  });
+  await arborist.reify({ save: false, omit: ["dev"] });
+  const manifest = readManifest(manifestPath);
+  return {
+    dependencies: manifest.dependencies ?? {},
+    bundles: manifest.dsh?.profile?.bundles ?? [],
+  };
+}
+
 async function main(): Promise<void> {
   const operation = process.argv[2];
   const profileDirectory = process.argv[3];
   const target = process.argv[4];
   const cachePath = process.argv[5];
-  if ((operation !== "add" && operation !== "remove") || !profileDirectory || !target) {
-    throw new Error("Usage: plugin-package-worker <add|remove> <profile-dir> <target> [cache]");
+  if ((operation !== "add" && operation !== "remove" && operation !== "synchronize") || !profileDirectory || !target) {
+    throw new Error("Usage: plugin-package-worker <add|remove|synchronize> <profile-dir> <target> [cache]");
   }
-  const result = await runPluginPackageOperation(operation, profileDirectory, target, cachePath);
+  const result = operation === "synchronize"
+    ? await synchronizeHarnessProfilePackages(profileDirectory, target, cachePath)
+    : await runPluginPackageOperation(operation, profileDirectory, target, cachePath);
   process.stdout.write(`${RESULT_PREFIX}${JSON.stringify(result)}\n`);
 }
 

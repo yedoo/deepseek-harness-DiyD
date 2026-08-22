@@ -28,6 +28,10 @@ import { HarnessUpdateCoordinator } from "./harness-update-coordinator";
 import { HarnessUpdateProbe } from "./harness-update-probe";
 import { HarnessUpdateTransactionStore } from "./harness-update-transaction";
 import {
+  HarnessProfileCompatibility,
+  ProcessHarnessProfilePackageSynchronizer,
+} from "./harness-profile-compatibility";
+import {
   fetchLatestHarnessVersion,
   HarnessUpdater,
   type HarnessUpdateState,
@@ -84,6 +88,7 @@ let harnessUpdater: HarnessUpdater | undefined;
 let harnessRuntimeInstaller: HarnessRuntimeInstaller | undefined;
 let harnessBootstrapper: HarnessBootstrapper | undefined;
 let harnessUpdateCoordinator: HarnessUpdateCoordinator | undefined;
+let harnessProfileCompatibility: HarnessProfileCompatibility | undefined;
 let pluginMarketService: PluginMarketService | undefined;
 let appearanceService: AppearanceService | undefined;
 let activeHarnessInstallation: HarnessInstallation | undefined;
@@ -155,6 +160,15 @@ void app.whenReady().then(async () => {
   harnessBootstrapper = new HarnessBootstrapper(
     harnessRuntimeInstaller,
     fetchLatestHarnessVersion,
+  );
+  harnessProfileCompatibility = new HarnessProfileCompatibility(
+    new ProcessHarnessProfilePackageSynchronizer({
+      nodeExecutable: process.env.DSH_NODE_EXECUTABLE ?? process.execPath,
+      workerPath: path.join(__dirname, "plugin-package-worker.js"),
+      logsRoot: path.join(userDataRoot, "logs"),
+      cachePath: path.join(userDataRoot, "npm-cache"),
+      runElectronAsNode: process.env.DSH_NODE_EXECUTABLE === undefined,
+    }),
   );
   harnessUpdateCoordinator = new HarnessUpdateCoordinator(
     harnessRuntimeInstaller,
@@ -575,9 +589,19 @@ async function verifyHarnessRuntime(
       startupTimeoutMs,
     })
   ));
-  await probe.verify(installation, (message) => {
+  const verify = () => probe.verify(installation, (message) => {
     sendStatus({ phase: "starting", message: `${statusPrefix}：${message}` });
   });
+  if (!harnessProfileCompatibility) {
+    await verify();
+    return;
+  }
+  sendStatus({ phase: "starting", message: `${statusPrefix}：正在同步插件兼容依赖…` });
+  await harnessProfileCompatibility.verify(
+    resolveHarnessDataRoot(installation),
+    readHarnessVersion(installation.root),
+    verify,
+  );
 }
 
 function desktopStateForRenderer(): DesktopUpdateState & {

@@ -11,6 +11,7 @@ describe("HarnessService launch arguments", () => {
       "127.0.0.1",
       "--port",
       "39084",
+      "--no-open",
     ]);
   });
 
@@ -22,6 +23,7 @@ describe("HarnessService launch arguments", () => {
       "127.0.0.1",
       "--port",
       "3080",
+      "--no-open",
     ]);
   });
 });

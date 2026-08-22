@@ -37,6 +37,7 @@ export function harnessLaunchArguments(
     "127.0.0.1",
     "--port",
     String(port),
+    "--no-open",
   ];
 }
 
