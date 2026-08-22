@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "private": true,
   "author": "yedoo",
   "description": "A minimal, frameless desktop host for DeepSeek Harness.",
