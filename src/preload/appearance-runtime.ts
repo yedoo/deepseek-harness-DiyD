@@ -81,6 +81,7 @@ function installStyle(registry: AppearanceProviderRegistry): void {
     #${LAYER_ID} .dsh-art-composer { left: 50%; bottom: 8%; width: min(780px, 58vw); max-height: 32%; transform: translateX(-50%); object-position: center bottom; }
     body[data-dsh-appearance-background="true"] {
       --dsw-alias-bg-base: transparent;
+      --dsw-alias-bg-layer-1: transparent;
       --dsw-specific-sidebar-fill: transparent;
       --dsw-specific-input-major: rgba(255,255,255,var(--dsh-appearance-panel-opacity));
       --dsw-specific-bubble: rgba(255,255,255,calc(var(--dsh-appearance-panel-opacity) * .82));
@@ -88,6 +89,9 @@ function installStyle(registry: AppearanceProviderRegistry): void {
       --dsw-alias-border-l2: rgba(160,160,170,var(--dsh-appearance-border-alpha));
     }
     body[data-ds-dark-theme][data-dsh-appearance-background="true"] {
+      --dsw-alias-bg-base: transparent;
+      --dsw-alias-bg-layer-1: transparent;
+      --dsw-specific-sidebar-fill: transparent;
       --dsw-specific-input-major: rgba(20,22,28,var(--dsh-appearance-panel-opacity));
       --dsw-specific-bubble: rgba(20,22,28,calc(var(--dsh-appearance-panel-opacity) * .82));
     }

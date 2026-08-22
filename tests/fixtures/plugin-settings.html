@@ -11,17 +11,23 @@
       overflow: hidden;
       color: #18181b;
       background: #fff;
+      --dsw-alias-bg-base: #fff;
+      --dsw-alias-bg-layer-1: #fff;
+      --dsw-specific-sidebar-fill: #fafbfc;
       --dsw-alias-label-primary: #18181b;
       --dsw-alias-label-secondary: #8a8a93;
       font: 14px/1.45 "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
     }
     body[data-ds-dark-theme] {
+      --dsw-alias-bg-base: #18181b;
+      --dsw-alias-bg-layer-1: #18181b;
+      --dsw-specific-sidebar-fill: #202023;
       --dsw-alias-label-primary: #f4f4f5;
       --dsw-alias-label-secondary: #c7c7cc;
     }
     button { font: inherit; }
     .app { display: grid; grid-template-columns: 350px 1fr; width: 100%; height: 100%; }
-    .sidebar { padding: 32px 18px 22px; border-right: 1px solid #ececef; background: #fafbfc; }
+    .sidebar { padding: 32px 18px 22px; border-right: 1px solid #ececef; background: var(--dsw-specific-sidebar-fill); }
     .brand { font-size: 22px; font-weight: 700; letter-spacing: -1px; }
     .brand small { padding: 2px 5px; border-radius: 3px; color: #fff; background: #18181b; font-size: 9px; letter-spacing: .5px; }
     .new { width: 100%; height: 48px; margin-top: 36px; border: 1px solid #e2e2e5; border-radius: 12px; background: #fff; }
@@ -29,7 +35,7 @@
     .row { height: 42px; padding: 11px 16px; border-radius: 10px; }
     .row.active { background: #edeef0; }
     .settings { position: absolute; bottom: 28px; left: 28px; }
-    .main { display: grid; place-items: center; background: #fff; }
+    .main { display: grid; place-items: center; background: var(--dsw-alias-bg-layer-1); }
     .composer { width: 760px; height: 140px; border: 1px solid #e3e3e6; border-radius: 18px; box-shadow: 0 14px 44px rgba(78, 104, 154, .1); }
     .backdrop { position: fixed; inset: 0; background: rgba(24, 24, 27, .23); backdrop-filter: blur(3px); }
     .modal {

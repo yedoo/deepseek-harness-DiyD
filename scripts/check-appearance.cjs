@@ -7,6 +7,7 @@ const settingsScreenshotPath = process.env.DSH_APPEARANCE_SETTINGS_SCREENSHOT;
 const nativeScreenshotPath = process.env.DSH_APPEARANCE_NATIVE_SCREENSHOT;
 const themesScreenshotPath = process.env.DSH_APPEARANCE_THEMES_SCREENSHOT;
 const targetUrl = process.env.DSH_APPEARANCE_TEST_URL;
+const testWallpaperId = process.env.DSH_APPEARANCE_TEST_WALLPAPER_ID;
 const testWidth = Number(process.env.DSH_APPEARANCE_TEST_WIDTH || 1752);
 const testHeight = Number(process.env.DSH_APPEARANCE_TEST_HEIGHT || 1128);
 const now = "2026-08-17T00:00:00.000Z";
@@ -21,7 +22,7 @@ let snapshot = {
   settings: {
     ...config(),
     background: { kind: "provider", providerId: "wallpaper-engine" },
-    providers: { "wallpaper-engine": { enabled: true, settings: {} } },
+    providers: { "wallpaper-engine": { enabled: true, settings: testWallpaperId ? { wallpaperId: testWallpaperId, playing: true } : {} } },
     overrides: { background: { kind: "provider", providerId: "wallpaper-engine" } },
   },
   themes: [],
@@ -302,8 +303,16 @@ app.whenReady().then(async () => {
   const nativeThemeRegression = await window.webContents.executeJavaScript(`new Promise((resolve) => {
     const originallyDark = document.body.hasAttribute('data-ds-dark-theme');
     document.body.setAttribute('data-ds-dark-theme', '');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      document.body.setAttribute('data-dsh-appearance-background', 'true');
+    const expectRuntimeWallpaper = ${JSON.stringify(Boolean(testWallpaperId))};
+    const deadline = Date.now() + 10000;
+    const collect = () => {
+      if (expectRuntimeWallpaper
+        && (document.body.getAttribute('data-dsh-appearance-background') !== 'true'
+          || !document.getElementById('dsh-desktop-appearance-layer'))) {
+        if (Date.now() < deadline) return setTimeout(collect, 25);
+      } else if (!expectRuntimeWallpaper) {
+        document.body.setAttribute('data-dsh-appearance-background', 'true');
+      }
       const host = document.querySelector('[data-dsh-appearance-panel]');
       const sidebar = [...document.querySelectorAll('*')].find((element) => {
         const rect = element.getBoundingClientRect();
@@ -316,10 +325,17 @@ app.whenReady().then(async () => {
           && parseFloat(style.borderRightWidth) > 0;
       });
       const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
+      const main = document.querySelector('.main');
+      const mainStyle = main ? getComputedStyle(main) : null;
       resolve({
         preserved: document.body.hasAttribute('data-ds-dark-theme'),
+        backgroundActive: document.body.getAttribute('data-dsh-appearance-background'),
+        layerPresent: Boolean(document.getElementById('dsh-desktop-appearance-layer')),
         hostColor: host ? getComputedStyle(host).color : '',
         inlineLabelColor: document.body.style.getPropertyValue('--dsw-alias-label-primary'),
+        baseFill: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
+        layerFill: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-layer-1').trim(),
+        mainBackground: mainStyle?.backgroundColor ?? '',
         sidebarFill: getComputedStyle(document.body).getPropertyValue('--dsw-specific-sidebar-fill').trim(),
         sidebarBorder: sidebarStyle ? {
           width: sidebarStyle.borderRightWidth,
@@ -328,8 +344,9 @@ app.whenReady().then(async () => {
         } : null,
       });
       if (!originallyDark) document.body.removeAttribute('data-ds-dark-theme');
-      document.body.setAttribute('data-dsh-appearance-background', 'false');
-    }));
+      if (!expectRuntimeWallpaper) document.body.setAttribute('data-dsh-appearance-background', 'false');
+    };
+    requestAnimationFrame(() => requestAnimationFrame(collect));
   })`);
   const regressionProblems = [];
   if (regression.activeNavItems.length !== 1 || !regression.activeNavItems[0]?.includes('外观')) regressionProblems.push(`active navigation: ${JSON.stringify(regression.activeNavItems)}`);
@@ -385,6 +402,15 @@ app.whenReady().then(async () => {
   const nativeDarkTextIsLight = nativeDarkTextChannels.length >= 3
     && nativeDarkTextChannels.slice(0, 3).every((channel) => channel >= 220);
   if (!nativeThemeRegression.preserved || !nativeDarkTextIsLight || nativeThemeRegression.inlineLabelColor !== '') regressionProblems.push(`native dark theme not inherited: ${JSON.stringify(nativeThemeRegression)}`);
+  if (testWallpaperId && (nativeThemeRegression.backgroundActive !== 'true' || !nativeThemeRegression.layerPresent)) {
+    regressionProblems.push(`wallpaper runtime did not survive native dark mode: ${JSON.stringify(nativeThemeRegression)}`);
+  }
+  if (nativeThemeRegression.baseFill !== 'transparent'
+    || nativeThemeRegression.layerFill !== 'transparent'
+    || (nativeThemeRegression.mainBackground
+      && !['transparent', 'rgba(0, 0, 0, 0)'].includes(nativeThemeRegression.mainBackground))) {
+    regressionProblems.push(`dark theme covers the wallpaper layer: ${JSON.stringify(nativeThemeRegression)}`);
+  }
   if (nativeThemeRegression.sidebarFill !== 'transparent') regressionProblems.push(`wallpaper sidebar is not transparent: ${JSON.stringify(nativeThemeRegression)}`);
   const sidebarBorderChannels = nativeThemeRegression.sidebarBorder?.color.match(/[\d.]+/g)?.map(Number) ?? [];
   const sidebarBorderTransparent = nativeThemeRegression.sidebarBorder === null
